@@ -3,11 +3,26 @@
 import { useEffect, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 
-const GOOGLE_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY || ''
+interface NominatimResult {
+  place_id: number
+  name: string
+  display_name: string
+  type: string
+  class: string
+  address?: { state?: string; country?: string; country_code?: string }
+}
+
+function detectPlaceType(item: NominatimResult): string {
+  const cc = (item.address?.country_code || 'us').toLowerCase()
+  if (cc !== 'us') return 'intl'
+  if (item.type === 'beach') return 'beach'
+  if (item.class === 'natural' || ['park', 'nature_reserve', 'national_park', 'forest', 'wood', 'coastline'].includes(item.type)) return 'nature'
+  return 'city'
+}
 
 function PlaceSearch({ onSelect }: { onSelect: (name: string, type: string) => void }) {
   const [query, setQuery] = useState('')
-  const [suggestions, setSuggestions] = useState<{ placeId: string; mainText: string; secondaryText: string }[]>([])
+  const [suggestions, setSuggestions] = useState<NominatimResult[]>([])
   const [loading, setLoading] = useState(false)
   const [open, setOpen] = useState(false)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -22,41 +37,26 @@ function PlaceSearch({ onSelect }: { onSelect: (name: string, type: string) => v
     timer.current = setTimeout(async () => {
       setLoading(true)
       try {
-        const res = await fetch('https://places.googleapis.com/v1/places:autocomplete', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-Goog-Api-Key': GOOGLE_KEY },
-          body: JSON.stringify({ input: val }),
-        })
-        const data = await res.json()
-        const suggs = (data.suggestions || []).map((s: any) => ({
-          placeId: s.placePrediction?.placeId || '',
-          mainText: s.placePrediction?.structuredFormat?.mainText?.text || s.placePrediction?.text?.text || '',
-          secondaryText: s.placePrediction?.structuredFormat?.secondaryText?.text || '',
-        })).filter((s: any) => s.placeId)
-        setSuggestions(suggs)
-        setOpen(suggs.length > 0)
+        const res = await fetch(
+          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(val)}&format=json&limit=6&addressdetails=1&featuretype=city,town,village,country`,
+          { headers: { 'Accept-Language': 'en-US,en' } }
+        )
+        const data: NominatimResult[] = await res.json()
+        setSuggestions(data)
+        setOpen(data.length > 0)
       } catch {}
       setLoading(false)
-    }, 300)
+    }, 400)
   }
 
-  async function selectPlace(sugg: { placeId: string; mainText: string; secondaryText: string }) {
+  function selectResult(item: NominatimResult) {
     setOpen(false); setSuggestions([]); setQuery('')
-    try {
-      const res = await fetch(
-        `https://places.googleapis.com/v1/places/${sugg.placeId}?fields=id,displayName,types`,
-        { headers: { 'X-Goog-Api-Key': GOOGLE_KEY } }
-      )
-      const place = await res.json()
-      const types: string[] = place.types || []
-      let detectedType = 'city'
-      if (types.some(t => ['beach'].includes(t))) detectedType = 'beach'
-      else if (types.some(t => ['natural_feature', 'park', 'campground', 'national_park', 'nature_reserve'].includes(t))) detectedType = 'nature'
-      else if (!types.some(t => ['locality', 'sublocality', 'administrative_area_level_1', 'administrative_area_level_2'].includes(t))) detectedType = 'intl'
-      onSelect(place.displayName?.text || sugg.mainText, detectedType)
-    } catch {
-      onSelect(sugg.mainText, 'city')
-    }
+    onSelect(item.name, detectPlaceType(item))
+  }
+
+  function getSubtext(item: NominatimResult) {
+    const parts = [item.address?.state, item.address?.country].filter(Boolean)
+    return parts.join(', ')
   }
 
   return (
@@ -64,21 +64,21 @@ function PlaceSearch({ onSelect }: { onSelect: (name: string, type: string) => v
       <input ref={inputRef} value={query} onChange={e => handleInput(e.target.value)}
         onKeyDown={e => {
           if (e.key === 'Escape') { setOpen(false); setQuery('') }
-          if (e.key === 'Enter' && query.trim()) { onSelect(query.trim(), 'city'); setQuery('') }
+          if (e.key === 'Enter' && query.trim() && suggestions.length === 0) { onSelect(query.trim(), 'city'); setQuery('') }
         }}
-        placeholder="Search or type name + Enter…"
+        placeholder="Search city, beach, park…"
         style={{ width: '100%', padding: '7px 10px', fontSize: 13, border: '1px solid var(--accent)', borderRadius: 2, background: 'var(--bg)', color: 'var(--text)', fontFamily: 'inherit', outline: 'none' }}
       />
       {loading && <span style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', fontSize: 10, color: 'var(--muted)' }}>…</span>}
       {open && suggestions.length > 0 && (
         <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 200, background: 'var(--white)', border: '1px solid var(--border)', borderTop: 'none', borderRadius: '0 0 3px 3px', boxShadow: '0 4px 12px rgba(0,0,0,0.08)', maxHeight: 220, overflowY: 'auto' }}>
           {suggestions.map(s => (
-            <div key={s.placeId} onMouseDown={e => { e.preventDefault(); selectPlace(s) }}
+            <div key={s.place_id} onMouseDown={e => { e.preventDefault(); selectResult(s) }}
               style={{ padding: '8px 12px', cursor: 'pointer', borderBottom: '1px solid var(--border)' }}
               onMouseEnter={e => (e.currentTarget.style.background = 'rgba(42,122,75,0.05)')}
               onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
-              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{s.mainText}</div>
-              <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 1 }}>{s.secondaryText}</div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{s.name}</div>
+              <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 1 }}>{getSubtext(s)}</div>
             </div>
           ))}
         </div>
