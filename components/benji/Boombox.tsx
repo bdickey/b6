@@ -190,7 +190,7 @@ export default function Boombox({ onClose }: Props) {
   return (
     <div style={{
       position: 'fixed', left: pos.x, top: pos.y,
-      width: 300, zIndex: 900,
+      width: '300px', zIndex: 900,
       fontFamily: 'Inter, system-ui, sans-serif',
     }}>
       {/* Handle */}
@@ -209,38 +209,40 @@ export default function Boombox({ onClose }: Props) {
         background: 'linear-gradient(180deg, #1A1408 0%, #0C0804 100%)',
         border: '2px solid #C8A020', borderRadius: '0 0 8px 8px',
         padding: '10px 12px 0',
+        overflow: 'hidden',
       }}>
         {/* Gold strip */}
         <div style={{ height: 4, background: 'linear-gradient(90deg, transparent, #C8A020 20%, #FFE060 50%, #C8A020 80%, transparent)', marginBottom: 8, borderRadius: 2 }} />
 
         {/* Main row: speaker | center | speaker */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          {/* Speaker */}
-          <div style={{ width: 64, height: 64, borderRadius: '50%', background: '#0A0804', boxShadow: 'inset 0 0 0 4px #C8A020, inset 0 0 0 10px #0A0804, inset 0 0 0 14px #8A6010, inset 0 0 0 18px #0A0804, inset 0 0 0 22px #5A4010, inset 0 0 0 30px #0A0804', flexShrink: 0 }} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {/* Left Speaker */}
+          <div style={{ width: 52, height: 52, borderRadius: '50%', background: '#0A0804', boxShadow: 'inset 0 0 0 3px #C8A020, inset 0 0 0 8px #0A0804, inset 0 0 0 11px #8A6010, inset 0 0 0 14px #0A0804, inset 0 0 0 17px #5A4010, inset 0 0 0 23px #0A0804', flexShrink: 0 }} />
 
           {/* Center */}
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 7 }}>
+          <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
             {/* Cassette */}
-            <div style={{ width: 100, height: 52, background: '#060402', borderRadius: 5, border: '1.5px solid #C8A020', position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'space-around', padding: '6px 12px' }}>
-              <div style={{ width: 22, height: 22, borderRadius: '50%', border: '2px solid #5A4010', background: '#1A1004', animation: playing ? 'spin-reel 0.7s linear infinite' : undefined }} />
-              <div style={{ width: 22, height: 22, borderRadius: '50%', border: '2px solid #5A4010', background: '#1A1004', animation: playing ? 'spin-reel 0.7s linear infinite' : undefined }} />
-              <div style={{ position: 'absolute', bottom: 6, left: '50%', transform: 'translateX(-50%)', width: 18, height: 8, borderBottom: '2px solid #3A2A08', borderRadius: '0 0 9px 9px' }} />
+            <div style={{ width: 90, height: 46, background: '#060402', borderRadius: 5, border: '1.5px solid #C8A020', position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'space-around', padding: '5px 10px' }}>
+              <div style={{ width: 20, height: 20, borderRadius: '50%', border: '2px solid #5A4010', background: '#1A1004', animation: playing ? 'spin-reel 0.7s linear infinite' : undefined }} />
+              <div style={{ width: 20, height: 20, borderRadius: '50%', border: '2px solid #5A4010', background: '#1A1004', animation: playing ? 'spin-reel 0.7s linear infinite' : undefined }} />
+              <div style={{ position: 'absolute', bottom: 5, left: '50%', transform: 'translateX(-50%)', width: 16, height: 7, borderBottom: '2px solid #3A2A08', borderRadius: '0 0 8px 8px' }} />
             </div>
 
-            {/* LED Track */}
+            {/* LED Track — bigger, cooler font */}
             <div style={{
-              fontFamily: "'Courier New', monospace", fontSize: 9, fontWeight: 700,
+              fontFamily: "'Courier New', monospace", fontSize: 12, fontWeight: 700,
               color: '#FFB000', background: '#0A0600', border: '1px solid #3A2A00',
-              padding: '3px 8px', borderRadius: 2, width: '100%', textAlign: 'center',
-              textShadow: '0 0 6px #FF8800', letterSpacing: '0.05em',
-              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-              animation: 'led-pulse 2s ease-in-out infinite',
+              padding: '4px 8px', borderRadius: 2, width: '100%', textAlign: 'center',
+              textShadow: '0 0 8px #FF8800, 0 0 16px rgba(255,176,0,0.4)',
+              letterSpacing: '0.03em', overflow: 'hidden', textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap', animation: 'led-pulse 2s ease-in-out infinite',
+              lineHeight: 1.3,
             }}>
               {currentTitle}
             </div>
 
             {/* Controls */}
-            <div style={{ display: 'flex', gap: 6 }}>
+            <div style={{ display: 'flex', gap: 5 }}>
               {[
                 { label: '⏮', onClick: prev },
                 { label: playing ? '⏸' : '▶', onClick: togglePlay, active: playing },
@@ -251,7 +253,7 @@ export default function Boombox({ onClose }: Props) {
                     fontFamily: 'inherit', fontSize: 13,
                     background: 'linear-gradient(180deg, #2E2208 0%, #1A1408 100%)',
                     border: `1.5px solid ${btn.active ? '#4DB86A' : '#C8A020'}`,
-                    borderRadius: 3, width: 32, height: 28, cursor: 'pointer',
+                    borderRadius: 3, width: 30, height: 26, cursor: 'pointer',
                     color: btn.active ? '#4DB86A' : '#C8A020',
                     textShadow: btn.active ? '0 0 8px rgba(77,184,106,0.6)' : undefined,
                   }}>
@@ -261,9 +263,12 @@ export default function Boombox({ onClose }: Props) {
             </div>
           </div>
 
-          {/* Speaker */}
-          <div style={{ width: 64, height: 64, borderRadius: '50%', background: '#0A0804', boxShadow: 'inset 0 0 0 4px #C8A020, inset 0 0 0 10px #0A0804, inset 0 0 0 14px #8A6010, inset 0 0 0 18px #0A0804, inset 0 0 0 22px #5A4010, inset 0 0 0 30px #0A0804', flexShrink: 0 }} />
+          {/* Right Speaker */}
+          <div style={{ width: 52, height: 52, borderRadius: '50%', background: '#0A0804', boxShadow: 'inset 0 0 0 3px #C8A020, inset 0 0 0 8px #0A0804, inset 0 0 0 11px #8A6010, inset 0 0 0 14px #0A0804, inset 0 0 0 17px #5A4010, inset 0 0 0 23px #0A0804', flexShrink: 0 }} />
         </div>
+
+        {/* Smiley face */}
+        <div style={{ textAlign: 'center', fontSize: 18, marginTop: 6, marginBottom: 2, opacity: 0.7 }}>😊</div>
 
         {/* Bottom: playlist + add songs */}
         <div style={{ marginTop: 10, borderTop: '1px solid rgba(200,160,32,0.2)', padding: '8px 0 10px' }}>
