@@ -1,7 +1,88 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
+
+const GOOGLE_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY || ''
+
+function PlaceSearch({ onSelect }: { onSelect: (name: string, type: string) => void }) {
+  const [query, setQuery] = useState('')
+  const [suggestions, setSuggestions] = useState<{ placeId: string; mainText: string; secondaryText: string }[]>([])
+  const [loading, setLoading] = useState(false)
+  const [open, setOpen] = useState(false)
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => { inputRef.current?.focus() }, [])
+
+  function handleInput(val: string) {
+    setQuery(val)
+    if (timer.current) clearTimeout(timer.current)
+    if (!val.trim()) { setSuggestions([]); setOpen(false); return }
+    timer.current = setTimeout(async () => {
+      setLoading(true)
+      try {
+        const res = await fetch('https://places.googleapis.com/v1/places:autocomplete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Goog-Api-Key': GOOGLE_KEY },
+          body: JSON.stringify({ input: val }),
+        })
+        const data = await res.json()
+        const suggs = (data.suggestions || []).map((s: any) => ({
+          placeId: s.placePrediction?.placeId || '',
+          mainText: s.placePrediction?.structuredFormat?.mainText?.text || s.placePrediction?.text?.text || '',
+          secondaryText: s.placePrediction?.structuredFormat?.secondaryText?.text || '',
+        })).filter((s: any) => s.placeId)
+        setSuggestions(suggs)
+        setOpen(suggs.length > 0)
+      } catch {}
+      setLoading(false)
+    }, 300)
+  }
+
+  async function selectPlace(sugg: { placeId: string; mainText: string; secondaryText: string }) {
+    setOpen(false); setSuggestions([]); setQuery('')
+    try {
+      const res = await fetch(
+        `https://places.googleapis.com/v1/places/${sugg.placeId}?fields=id,displayName,types`,
+        { headers: { 'X-Goog-Api-Key': GOOGLE_KEY } }
+      )
+      const place = await res.json()
+      const types: string[] = place.types || []
+      let detectedType = 'city'
+      if (types.some(t => ['beach'].includes(t))) detectedType = 'beach'
+      else if (types.some(t => ['natural_feature', 'park', 'campground', 'national_park', 'nature_reserve'].includes(t))) detectedType = 'nature'
+      else if (!types.some(t => ['locality', 'sublocality', 'administrative_area_level_1', 'administrative_area_level_2'].includes(t))) detectedType = 'intl'
+      onSelect(place.displayName?.text || sugg.mainText, detectedType)
+    } catch {
+      onSelect(sugg.mainText, 'city')
+    }
+  }
+
+  return (
+    <div style={{ position: 'relative', width: '100%' }}>
+      <input ref={inputRef} value={query} onChange={e => handleInput(e.target.value)}
+        onKeyDown={e => e.key === 'Escape' && (setOpen(false), setQuery(''))}
+        placeholder="Search city, beach, park…"
+        style={{ width: '100%', padding: '7px 10px', fontSize: 13, border: '1px solid var(--accent)', borderRadius: 2, background: 'var(--bg)', color: 'var(--text)', fontFamily: 'inherit', outline: 'none' }}
+      />
+      {loading && <span style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', fontSize: 10, color: 'var(--muted)' }}>…</span>}
+      {open && suggestions.length > 0 && (
+        <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 200, background: 'var(--white)', border: '1px solid var(--border)', borderTop: 'none', borderRadius: '0 0 3px 3px', boxShadow: '0 4px 12px rgba(0,0,0,0.08)', maxHeight: 220, overflowY: 'auto' }}>
+          {suggestions.map(s => (
+            <div key={s.placeId} onMouseDown={e => { e.preventDefault(); selectPlace(s) }}
+              style={{ padding: '8px 12px', cursor: 'pointer', borderBottom: '1px solid var(--border)' }}
+              onMouseEnter={e => (e.currentTarget.style.background = 'rgba(42,122,75,0.05)')}
+              onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{s.mainText}</div>
+              <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 1 }}>{s.secondaryText}</div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
 
 interface Activity {
   id: string
@@ -43,6 +124,7 @@ function EditCell({ value, onSave }: { value?: string; onSave: (v: string) => vo
 export default function ActivitiesPage() {
   const [activities, setActivities] = useState<Activity[]>([])
   const [places, setPlaces] = useState<PlaceVisited[]>([])
+  const [searchingPlace, setSearchingPlace] = useState(false)
   const supabase = createClient()
 
   useEffect(() => { loadAll() }, [])
@@ -71,8 +153,9 @@ export default function ActivitiesPage() {
     loadAll()
   }
 
-  async function addPlace() {
-    await supabase.from('places_visited').insert({ name: 'New Place', type: 'city' })
+  async function addPlaceFromSearch(name: string, type: string) {
+    await supabase.from('places_visited').insert({ name, type })
+    setSearchingPlace(false)
     loadAll()
   }
 
@@ -147,10 +230,12 @@ export default function ActivitiesPage() {
               {places.length} place{places.length !== 1 ? 's' : ''} visited
             </div>
           </div>
-          <button onClick={addPlace}
-            style={{ fontFamily: 'inherit', fontSize: 11, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--accent)', background: 'none', border: '1px dashed var(--border)', padding: '5px 12px', cursor: 'pointer', borderRadius: 2 }}>
-            + Add Place
-          </button>
+          {!searchingPlace && (
+            <button onClick={() => setSearchingPlace(true)}
+              style={{ fontFamily: 'inherit', fontSize: 11, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--accent)', background: 'none', border: '1px dashed var(--border)', padding: '5px 12px', cursor: 'pointer', borderRadius: 2 }}>
+              + Add Place
+            </button>
+          )}
         </div>
 
         {/* Map + Table side by side */}
@@ -202,6 +287,14 @@ export default function ActivitiesPage() {
 
           {/* Table */}
           <div className="card">
+            {searchingPlace && (
+              <div style={{ padding: '10px 12px', borderBottom: '1px solid var(--border)', display: 'flex', gap: 8, alignItems: 'center' }}>
+                <div style={{ flex: 1 }}>
+                  <PlaceSearch onSelect={addPlaceFromSearch} />
+                </div>
+                <button onClick={() => setSearchingPlace(false)} style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 13, padding: '0 4px', fontFamily: 'inherit' }}>✕</button>
+              </div>
+            )}
             <table className="hl-table">
               <thead><tr>
                 <th>Place</th>

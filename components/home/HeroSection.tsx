@@ -24,6 +24,7 @@ export default function HeroSection() {
   useEffect(() => {
     function onMouseMove(e: MouseEvent) {
       if (!dragging.current) return
+      e.preventDefault()
       const dx = e.clientX - dragging.current.startX
       const dy = e.clientY - dragging.current.startY
       setPositions(prev => prev.map((p, i) =>
@@ -33,7 +34,7 @@ export default function HeroSection() {
       ))
     }
     function onMouseUp() { dragging.current = null }
-    window.addEventListener('mousemove', onMouseMove)
+    window.addEventListener('mousemove', onMouseMove, { passive: false })
     window.addEventListener('mouseup', onMouseUp)
     return () => {
       window.removeEventListener('mousemove', onMouseMove)
