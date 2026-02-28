@@ -80,6 +80,7 @@ export default function CalendarPage() {
   const [sitters, setSitters] = useState<Sitter[]>([])
   const [sitterBookings, setSitterBookings] = useState<SitterBooking[]>([])
   const [transport, setTransport] = useState<DailyTransport[]>([])
+  const [carpoolMatrix, setCarpoolMatrix] = useState<Record<string, Record<string, string>>>({})
   const [modal, setModal] = useState<{ open: boolean; date: string; event?: CalendarEvent } | null>(null)
   const [form, setForm] = useState({ date: '', title: '', type: 'default', notes: '' })
   const [bookingModal, setBookingModal] = useState<{ open: boolean; booking?: SitterBooking } | null>(null)
@@ -93,7 +94,7 @@ export default function CalendarPage() {
     const start = `${year}-${String(month + 1).padStart(2, '0')}-01`
     const lastDay = new Date(year, month + 1, 0).getDate()
     const end = `${year}-${String(month + 1).padStart(2, '0')}-${lastDay}`
-    const [evRes, prRes, feRes, holRes, sitRes, bkRes, trRes] = await Promise.all([
+    const [evRes, prRes, feRes, holRes, sitRes, bkRes, trRes, cmRes] = await Promise.all([
       supabase.from('calendar_events').select('*').gte('date', start).lte('date', end),
       supabase.from('afterschool_programs').select('*').order('name'),
       supabase.from('family_events').select('*').order('date'),
@@ -101,6 +102,7 @@ export default function CalendarPage() {
       supabase.from('sitters').select('*').order('name'),
       supabase.from('sitter_bookings').select('*, sitters(name, color)').order('date'),
       supabase.from('daily_transport').select('*').gte('date', start).lte('date', end),
+      supabase.from('app_settings').select('value').eq('key', 'carpool_matrix').single(),
     ])
     if (evRes.data) setEvents(evRes.data)
     if (prRes.data) setPrograms(prRes.data)
@@ -109,6 +111,7 @@ export default function CalendarPage() {
     if (sitRes.data) setSitters(sitRes.data)
     if (bkRes.data) setSitterBookings(bkRes.data)
     if (trRes.data) setTransport(trRes.data)
+    if (cmRes.data?.value) { try { setCarpoolMatrix(JSON.parse(cmRes.data.value)) } catch {} }
   }
 
   function prevMonth() { if (month === 0) { setMonth(11); setYear(y => y - 1) } else setMonth(m => m - 1) }
@@ -212,6 +215,7 @@ export default function CalendarPage() {
     return new Date(d + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
   }
 
+  const DOW_DAY: Record<number, string> = { 1: 'Mon', 2: 'Tue', 3: 'Wed', 4: 'Thu', 5: 'Fri' }
   const activePrograms = programs.filter(pr => pr.status === 'enrolled' || pr.status === 'waitlist')
   const todayStr = todayDateStr()
   const upcomingBookings = sitterBookings.filter(b => b.date >= todayStr).sort((a, b) => a.date.localeCompare(b.date))
@@ -259,6 +263,9 @@ export default function CalendarPage() {
                   const cellSitters = sitterBookings.filter(b => b.date === cell.dateStr)
                   const cellTransport = transport.find(t => t.date === cell.dateStr)
                   const isWeekday = cell.dow >= 1 && cell.dow <= 5
+                  const carpoolDay = DOW_DAY[cell.dow]
+                  const amValue = cellTransport?.am_person || (carpoolDay ? carpoolMatrix[carpoolDay]?.AM : '') || ''
+                  const pmValue = cellTransport?.pm_person || (carpoolDay ? carpoolMatrix[carpoolDay]?.PM : '') || ''
 
                   return (
                     <td
@@ -321,11 +328,11 @@ export default function CalendarPage() {
                         <div onClick={e => e.stopPropagation()} style={{ marginTop: 5, borderTop: '1px dashed rgba(0,0,0,0.07)', paddingTop: 4, display: 'flex', flexDirection: 'column', gap: 2 }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 9, color: 'var(--muted)' }}>
                             <span style={{ color: '#2A7A4B', fontWeight: 700 }}>↑</span>
-                            <EditCell value={cellTransport?.am_person} onSave={v => setTransportField(cell.dateStr, 'am_person', v)} />
+                            <EditCell value={amValue} onSave={v => setTransportField(cell.dateStr, 'am_person', v)} />
                           </div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 9, color: 'var(--muted)' }}>
                             <span style={{ color: '#C8311A', fontWeight: 700 }}>↓</span>
-                            <EditCell value={cellTransport?.pm_person} onSave={v => setTransportField(cell.dateStr, 'pm_person', v)} />
+                            <EditCell value={pmValue} onSave={v => setTransportField(cell.dateStr, 'pm_person', v)} />
                           </div>
                         </div>
                       )}

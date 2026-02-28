@@ -62,8 +62,11 @@ function PlaceSearch({ onSelect }: { onSelect: (name: string, type: string) => v
   return (
     <div style={{ position: 'relative', width: '100%' }}>
       <input ref={inputRef} value={query} onChange={e => handleInput(e.target.value)}
-        onKeyDown={e => e.key === 'Escape' && (setOpen(false), setQuery(''))}
-        placeholder="Search city, beach, park…"
+        onKeyDown={e => {
+          if (e.key === 'Escape') { setOpen(false); setQuery('') }
+          if (e.key === 'Enter' && query.trim()) { onSelect(query.trim(), 'city'); setQuery('') }
+        }}
+        placeholder="Search or type name + Enter…"
         style={{ width: '100%', padding: '7px 10px', fontSize: 13, border: '1px solid var(--accent)', borderRadius: 2, background: 'var(--bg)', color: 'var(--text)', fontFamily: 'inherit', outline: 'none' }}
       />
       {loading && <span style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', fontSize: 10, color: 'var(--muted)' }}>…</span>}
