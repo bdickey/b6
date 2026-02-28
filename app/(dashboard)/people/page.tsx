@@ -56,16 +56,32 @@ export default function PeoplePage() {
     if (fe.data) setFamilyEvents(fe.data)
   }
 
-  function statusBadge(status?: string) {
-    if (!status) return null
-    const map: Record<string, string> = { scheduled: 'badge-green', pending: 'badge-gold', overdue: 'badge-red', confirmed: 'badge-green', waitlist: 'badge-gold', enrolled: 'badge-green', consider: 'badge-gray' }
-    return <span className={`badge ${map[status] || 'badge-gray'}`}>{status}</span>
-  }
+  const PROGRAM_STATUSES = ['consider', 'waitlist', 'enrolled']
+  const PLAYDATE_STATUSES = ['pending', 'scheduled', 'overdue', 'confirmed']
+  const PRIORITIES = ['low', 'medium', 'high']
 
-  function priorityBadge(p?: string) {
-    if (!p) return null
-    const map: Record<string, string> = { high: 'badge-green', medium: 'badge-gold', low: 'badge-gray' }
-    return <span className={`badge ${map[p] || 'badge-gray'}`}>{p}</span>
+  const STATUS_CLASS: Record<string, string> = {
+    scheduled: 'badge-green', pending: 'badge-gold', overdue: 'badge-red',
+    confirmed: 'badge-green', waitlist: 'badge-gold', enrolled: 'badge-green',
+    consider: 'badge-gray',
+  }
+  const PRIORITY_CLASS: Record<string, string> = { high: 'badge-green', medium: 'badge-gold', low: 'badge-gray' }
+
+  function CycleBadge({ value, options, colorMap, onCycle }: { value?: string; options: string[]; colorMap: Record<string, string>; onCycle: (v: string) => void }) {
+    const v = value || options[0]
+    const cls = colorMap[v] || 'badge-gray'
+    function handleClick() {
+      const idx = options.indexOf(v)
+      const next = options[(idx + 1) % options.length]
+      onCycle(next)
+    }
+    return (
+      <button onClick={handleClick} className={`badge ${cls}`}
+        style={{ cursor: 'pointer', border: 'none', fontFamily: 'inherit' }}
+        title="Click to cycle">
+        {v}
+      </button>
+    )
   }
 
   async function addDinner() {
@@ -153,7 +169,7 @@ export default function PeoplePage() {
                   </td>
                   <td><EditCell value={p.child_name} onSave={v => updatePerson(p.id, 'child_name', v)} />{p.child_grade && <>, <EditCell value={p.child_grade} onSave={v => updatePerson(p.id, 'child_grade', v)} /></>}</td>
                   <td><EditCell value={p.contact} onSave={v => updatePerson(p.id, 'contact', v)} /></td>
-                  <td>{priorityBadge(p.priority)}</td>
+                  <td><CycleBadge value={p.priority} options={PRIORITIES} colorMap={PRIORITY_CLASS} onCycle={v => updatePerson(p.id, 'priority', v)} /></td>
                   <td><EditCell value={p.notes} onSave={v => updatePerson(p.id, 'notes', v)} /></td>
                 </tr>
               ))}
@@ -182,7 +198,7 @@ export default function PeoplePage() {
                   <td><EditCell value={p.parent_name} onSave={v => updatePerson(p.id, 'parent_name', v)} /></td>
                   <td><EditCell value={p.contact} onSave={v => updatePerson(p.id, 'contact', v)} /></td>
                   <td><EditCell value={p.last_date} onSave={v => updatePerson(p.id, 'last_date', v)} /></td>
-                  <td>{statusBadge(p.status)}</td>
+                  <td><CycleBadge value={p.status} options={PLAYDATE_STATUSES} colorMap={STATUS_CLASS} onCycle={v => updatePerson(p.id, 'status', v)} /></td>
                   <td><EditCell value={p.notes} onSave={v => updatePerson(p.id, 'notes', v)} /></td>
                 </tr>
               ))}
@@ -210,7 +226,7 @@ export default function PeoplePage() {
                   <td><EditCell value={pr.day_time} onSave={v => updateProgram(pr.id, 'day_time', v)} /></td>
                   <td><EditCell value={pr.location} onSave={v => updateProgram(pr.id, 'location', v)} /></td>
                   <td><EditCell value={pr.cost} onSave={v => updateProgram(pr.id, 'cost', v)} /></td>
-                  <td>{statusBadge(pr.status)}</td>
+                  <td><CycleBadge value={pr.status} options={PROGRAM_STATUSES} colorMap={STATUS_CLASS} onCycle={v => updateProgram(pr.id, 'status', v)} /></td>
                 </tr>
               ))}
             </tbody>
