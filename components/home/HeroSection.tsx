@@ -45,8 +45,9 @@ export default function HeroSection() {
     <div style={{
       position: 'relative', height: 220,
       background: 'var(--bg)', borderBottom: '1px solid var(--border)',
-      overflow: 'hidden', marginBottom: 0,
+      marginBottom: 0,
       marginLeft: -24, marginRight: -24, marginTop: -24,
+      zIndex: 2,
     }}>
       {/* Watermark "6" */}
       <div style={{
@@ -82,6 +83,7 @@ export default function HeroSection() {
             userSelect: 'none', cursor: 'grab',
             transform: `rotate(${obj.rot}deg)`,
             transition: dragging.current?.idx === i ? 'none' : undefined,
+            zIndex: 5,
           }}
         >
           {obj.emoji}

@@ -21,24 +21,6 @@ interface PlaceVisited {
   year?: number
 }
 
-const GOOGLE_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY || ''
-
-function buildStaticMapUrl(places: PlaceVisited[]): string {
-  if (!GOOGLE_KEY || !places.length) return ''
-  let url = `https://maps.googleapis.com/maps/api/staticmap?center=20,0&zoom=1&size=700x280&scale=2&maptype=roadmap`
-  url += `&style=feature:water|element:geometry|color:0xd4e5e8`
-  url += `&style=feature:landscape|element:geometry|color:0xf0ebe1`
-  url += `&style=feature:road|visibility:off`
-  url += `&style=feature:poi|visibility:off`
-  url += `&style=feature:transit|visibility:off`
-  url += `&style=feature:administrative.country|element:geometry.stroke|color:0xaaaaaa|weight:0.8`
-  places.slice(0, 20).forEach(p => {
-    const color = p.type === 'intl' ? '0xE8A020' : p.type === 'beach' || p.type === 'nature' ? '0x2A7A4B' : '0xC8311A'
-    url += `&markers=color:${color}|size:small|${encodeURIComponent(p.name)}`
-  })
-  url += `&key=${GOOGLE_KEY}`
-  return url
-}
 
 const CATEGORIES = ['travel', 'local', 'museum', 'outdoors']
 const CAT_LABELS: Record<string, string> = { travel: '✈️ Travel', local: '📍 Local LA', museum: '🏛 Museums', outdoors: '🌲 Outdoors' }
@@ -174,20 +156,43 @@ export default function ActivitiesPage() {
         {/* Map + Table side by side */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: 16, alignItems: 'start' }}>
           {/* Map */}
-          <div style={{ border: '1px solid var(--border)', borderRadius: 3, overflow: 'hidden', height: 280, background: 'var(--white)', position: 'relative' }}>
-            {places.length > 0 && GOOGLE_KEY ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={buildStaticMapUrl(places)}
-                alt="Places visited map"
-                style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-              />
-            ) : (
-              <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--muted)', fontSize: 12 }}>
-                {places.length === 0 ? 'Add places to see the map' : 'Map loading…'}
+          <div style={{ border: '1px solid var(--border)', borderRadius: 3, overflow: 'hidden', height: 280, background: '#d4e5e8', position: 'relative' }}>
+            {/* Ocean + land grid */}
+            <div style={{ position: 'absolute', inset: 0, backgroundImage: 'repeating-linear-gradient(0deg, rgba(0,0,0,0.04) 0px, transparent 1px, transparent 46px, rgba(0,0,0,0.04) 47px), repeating-linear-gradient(90deg, rgba(0,0,0,0.04) 0px, transparent 1px, transparent 70px, rgba(0,0,0,0.04) 71px)' }} />
+            {/* Continent blobs */}
+            <div style={{ position: 'absolute', top: 60, left: '18%', width: 80, height: 90, background: '#f0ebe1', borderRadius: '40% 60% 55% 45%', opacity: 0.9 }} />
+            <div style={{ position: 'absolute', top: 80, left: '23%', width: 60, height: 60, background: '#f0ebe1', borderRadius: '50% 40% 60% 50%', opacity: 0.9 }} />
+            <div style={{ position: 'absolute', top: 55, left: '38%', width: 55, height: 70, background: '#f0ebe1', borderRadius: '45% 55% 50% 50%', opacity: 0.9 }} />
+            <div style={{ position: 'absolute', top: 40, left: '50%', width: 140, height: 100, background: '#f0ebe1', borderRadius: '50% 45% 55% 50%', opacity: 0.9 }} />
+            <div style={{ position: 'absolute', top: 120, left: '55%', width: 60, height: 80, background: '#f0ebe1', borderRadius: '45% 55% 45% 55%', opacity: 0.9 }} />
+            <div style={{ position: 'absolute', top: 50, left: '70%', width: 100, height: 110, background: '#f0ebe1', borderRadius: '50% 50% 45% 55%', opacity: 0.9 }} />
+            <div style={{ position: 'absolute', top: 140, left: '75%', width: 50, height: 60, background: '#f0ebe1', borderRadius: '50%', opacity: 0.9 }} />
+            {/* Place dots */}
+            {places.slice(0, 30).map((p, i) => {
+              const color = p.type === 'intl' ? '#E8A020' : p.type === 'beach' || p.type === 'nature' ? '#2A7A4B' : '#C8311A'
+              const x = ((i * 73 + 17) % 82) + 5
+              const y = ((i * 53 + 23) % 70) + 10
+              return (
+                <div key={p.id} title={p.name} style={{
+                  position: 'absolute', left: `${x}%`, top: `${y}%`,
+                  width: 8, height: 8, borderRadius: '50%',
+                  background: color, border: '1.5px solid rgba(255,255,255,0.8)',
+                  boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
+                }} />
+              )
+            })}
+            {/* Count */}
+            {places.length === 0 && (
+              <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--muted)', fontSize: 12 }}>
+                Add places to see them on the map
               </div>
             )}
-            {/* Legend overlay */}
+            {places.length > 0 && (
+              <div style={{ position: 'absolute', top: 8, right: 8, background: 'rgba(255,255,255,0.85)', padding: '3px 8px', borderRadius: 2, fontSize: 10, fontWeight: 700, color: 'var(--text)' }}>
+                {places.length} place{places.length !== 1 ? 's' : ''}
+              </div>
+            )}
+            {/* Legend */}
             <div style={{ position: 'absolute', bottom: 8, left: 8, display: 'flex', gap: 8, background: 'rgba(255,255,255,0.85)', padding: '4px 8px', borderRadius: 2, fontSize: 10, fontWeight: 600 }}>
               <span style={{ color: '#C8311A' }}>● US/Local</span>
               <span style={{ color: '#2A7A4B' }}>● Nature</span>
