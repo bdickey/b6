@@ -3,6 +3,17 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 
+const SITTER_COLORS = ['#E57373', '#F06292', '#BA68C8', '#64B5F6', '#4DB6AC', '#81C784', '#FFB74D', '#A1887F']
+
+interface Sitter {
+  id: string
+  name: string
+  color: string
+  contact?: string
+  rate_per_hour?: number
+  notes?: string
+}
+
 interface Person {
   id: string
   name: string
@@ -20,17 +31,33 @@ interface Person {
 export default function PeoplePage() {
   const [dinners, setDinners] = useState<Person[]>([])
   const [playdates, setPlaydates] = useState<Person[]>([])
+  const [sitters, setSitters] = useState<Sitter[]>([])
   const supabase = createClient()
 
   useEffect(() => { loadAll() }, [])
 
   async function loadAll() {
-    const [d, p] = await Promise.all([
+    const [d, p, s] = await Promise.all([
       supabase.from('people_crm').select('*').eq('type', 'dinner').order('name'),
       supabase.from('people_crm').select('*').eq('type', 'playdate').order('name'),
+      supabase.from('sitters').select('*').order('name'),
     ])
     if (d.data) setDinners(d.data)
     if (p.data) setPlaydates(p.data)
+    if (s.data) setSitters(s.data)
+  }
+
+  async function addSitter() {
+    await supabase.from('sitters').insert({ name: 'New Sitter', color: SITTER_COLORS[sitters.length % SITTER_COLORS.length] })
+    loadAll()
+  }
+  async function updateSitter(id: string, field: string, value: string | number) {
+    await supabase.from('sitters').update({ [field]: value }).eq('id', id)
+    loadAll()
+  }
+  async function deleteSitter(id: string) {
+    await supabase.from('sitters').delete().eq('id', id)
+    loadAll()
   }
 
   const PLAYDATE_STATUSES = ['pending', 'scheduled', 'overdue', 'confirmed']
@@ -159,6 +186,63 @@ export default function PeoplePage() {
           </table>
         </div>
       </div>
+
+      {/* Sitter CRM */}
+      <div>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+          <div>
+            <div className="section-label">Sitter CRM</div>
+            <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>Manage sitters and their colors — bookings live on the Calendar</div>
+          </div>
+          <button onClick={addSitter} style={{ fontFamily: 'inherit', fontSize: 11, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--accent)', background: 'none', border: '1px dashed var(--border)', padding: '5px 12px', cursor: 'pointer', borderRadius: 2 }}>
+            + Add Sitter
+          </button>
+        </div>
+        <div className="card">
+          <table className="hl-table">
+            <thead><tr>
+              <th>Color</th>
+              <th>Name</th>
+              <th>Contact</th>
+              <th>Rate / hr</th>
+              <th>Notes</th>
+              <th style={{ width: 28 }}></th>
+            </tr></thead>
+            <tbody>
+              {sitters.length === 0 && (
+                <tr><td colSpan={6} style={{ color: 'var(--muted)', fontSize: 12, textAlign: 'center', padding: '16px 12px' }}>No sitters yet</td></tr>
+              )}
+              {sitters.map(s => (
+                <tr key={s.id}>
+                  <td>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                      {[SITTER_COLORS.slice(0, 4), SITTER_COLORS.slice(4)].map((row, ri) => (
+                        <div key={ri} style={{ display: 'flex', gap: 3 }}>
+                          {row.map(c => (
+                            <button key={c} onClick={() => updateSitter(s.id, 'color', c)}
+                              style={{ width: 12, height: 12, borderRadius: '50%', background: c, border: s.color === c ? '2px solid var(--text)' : '1.5px solid transparent', cursor: 'pointer', padding: 0, flexShrink: 0 }} />
+                          ))}
+                        </div>
+                      ))}
+                    </div>
+                  </td>
+                  <td>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
+                      <span style={{ width: 10, height: 10, borderRadius: '50%', background: s.color, display: 'inline-block', flexShrink: 0 }} />
+                      <strong><EditCell value={s.name} onSave={v => updateSitter(s.id, 'name', v)} /></strong>
+                    </span>
+                  </td>
+                  <td><EditCell value={s.contact} onSave={v => updateSitter(s.id, 'contact', v)} /></td>
+                  <td><EditCell value={s.rate_per_hour != null ? String(s.rate_per_hour) : ''} onSave={v => updateSitter(s.id, 'rate_per_hour', parseFloat(v) || 0)} /></td>
+                  <td><EditCell value={s.notes} onSave={v => updateSitter(s.id, 'notes', v)} /></td>
+                  <td><button onClick={() => deleteSitter(s.id)} style={{ background: 'none', border: 'none', color: 'var(--border)', cursor: 'pointer', fontSize: 13, padding: 0, fontFamily: 'inherit' }}>×</button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
     </div>
   )
 }

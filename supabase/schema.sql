@@ -110,6 +110,25 @@ create table if not exists restaurants (
 -- alter table restaurants add column if not exists address text;
 -- alter table restaurants add column if not exists phone text;
 
+-- Run these in Supabase SQL editor:
+-- alter table sitters add column if not exists color text default '#81C784';
+-- create table if not exists school_holidays (
+--   id uuid primary key default gen_random_uuid(),
+--   name text not null,
+--   start_date date not null,
+--   end_date date not null
+-- );
+-- create table if not exists daily_transport (
+--   id uuid primary key default gen_random_uuid(),
+--   date date not null unique,
+--   am_person text,
+--   pm_person text
+-- );
+-- create policy "Authenticated users can do everything on school_holidays" on school_holidays for all to authenticated using (true) with check (true);
+-- create policy "Authenticated users can do everything on daily_transport" on daily_transport for all to authenticated using (true) with check (true);
+-- alter table school_holidays enable row level security;
+-- alter table daily_transport enable row level security;
+
 -- Sitters
 create table if not exists sitters (
   id uuid primary key default gen_random_uuid(),
