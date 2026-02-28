@@ -5,11 +5,10 @@ import { createClient } from '@/lib/supabase/client'
 import WeatherModule from '@/components/home/WeatherModule'
 import HeroSection from '@/components/home/HeroSection'
 
-interface CalendarEvent {
-  id: string
+interface UpcomingItem {
   date: string
   title: string
-  type: string
+  color: string
 }
 
 interface AppSetting {
@@ -27,39 +26,76 @@ interface SitterBooking {
   sitters?: { name: string }
 }
 
+function EditStat({ value, onSave }: { value: string; onSave: (v: string) => void }) {
+  const [editing, setEditing] = useState(false)
+  const [v, setV] = useState(value)
+  if (editing) return (
+    <input
+      autoFocus value={v}
+      onChange={e => setV(e.target.value)}
+      onBlur={() => { onSave(v); setEditing(false) }}
+      onKeyDown={e => e.key === 'Enter' && (onSave(v), setEditing(false))}
+      style={{ width: 90, fontFamily: 'inherit', fontSize: 12, fontWeight: 700, textAlign: 'right', background: 'var(--bg)', border: '1px solid var(--accent)', borderRadius: 2, padding: '1px 4px', color: 'var(--text)', outline: 'none' }}
+    />
+  )
+  return (
+    <span
+      onClick={() => setEditing(true)}
+      style={{ fontWeight: 700, cursor: 'text', borderBottom: '1px dashed var(--border)' }}
+      title="Click to edit"
+    >{value}</span>
+  )
+}
+
 export default function HomePage() {
-  const [events, setEvents] = useState<CalendarEvent[]>([])
+  const [upcoming, setUpcoming] = useState<UpcomingItem[]>([])
   const [settings, setSettings] = useState<Record<string, string>>({})
   const [nextBooking, setNextBooking] = useState<SitterBooking | null>(null)
   const [placesCount, setPlacesCount] = useState(0)
   const [activitiesCount, setActivitiesCount] = useState(0)
   const supabase = createClient()
 
-  useEffect(() => {
-    async function load() {
-      const today = new Date().toISOString().split('T')[0]
-      const twoMonths = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+  useEffect(() => { load() }, [])
 
-      const [evRes, settRes, bkRes, plRes, acRes] = await Promise.all([
-        supabase.from('calendar_events').select('*').gte('date', today).lte('date', twoMonths).order('date').limit(6),
-        supabase.from('app_settings').select('*'),
-        supabase.from('sitter_bookings').select('*, sitters(name)').gte('date', today).order('date').limit(1),
-        supabase.from('places_visited').select('id').limit(100),
-        supabase.from('afterschool_programs').select('id').eq('status', 'enrolled').limit(100),
-      ])
+  async function load() {
+    const today = new Date().toISOString().split('T')[0]
+    const twoMonths = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
 
-      if (evRes.data) setEvents(evRes.data)
-      if (settRes.data) {
-        const map: Record<string, string> = {}
-        settRes.data.forEach((s: AppSetting) => { map[s.key] = s.value })
-        setSettings(map)
-      }
-      if (bkRes.data && bkRes.data.length > 0) setNextBooking(bkRes.data[0])
-      if (plRes.data) setPlacesCount(plRes.data.length)
-      if (acRes.data) setActivitiesCount(acRes.data.length)
+    const [evRes, feRes, settRes, bkRes, plRes, acRes] = await Promise.all([
+      supabase.from('calendar_events').select('date,title,type').gte('date', today).lte('date', twoMonths),
+      supabase.from('family_events').select('date,name').gte('date', today).lte('date', twoMonths),
+      supabase.from('app_settings').select('*'),
+      supabase.from('sitter_bookings').select('*, sitters(name)').gte('date', today).order('date').limit(1),
+      supabase.from('places_visited').select('id').limit(100),
+      supabase.from('afterschool_programs').select('id').eq('status', 'enrolled').limit(100),
+    ])
+
+    // Merge and sort upcoming items
+    const items: UpcomingItem[] = []
+    if (evRes.data) evRes.data.forEach(e => items.push({
+      date: e.date, title: e.title,
+      color: e.type === 'red' ? 'var(--accent2)' : e.type === 'gold' ? 'var(--accent3)' : 'var(--accent)',
+    }))
+    if (feRes.data) feRes.data.forEach(e => items.push({
+      date: e.date, title: e.name, color: 'var(--accent3)',
+    }))
+    items.sort((a, b) => a.date.localeCompare(b.date))
+    setUpcoming(items.slice(0, 8))
+
+    if (settRes.data) {
+      const map: Record<string, string> = {}
+      settRes.data.forEach((s: AppSetting) => { map[s.key] = s.value })
+      setSettings(map)
     }
-    load()
-  }, [])
+    if (bkRes.data && bkRes.data.length > 0) setNextBooking(bkRes.data[0])
+    if (plRes.data) setPlacesCount(plRes.data.length)
+    if (acRes.data) setActivitiesCount(acRes.data.length)
+  }
+
+  async function updateSetting(key: string, value: string) {
+    await supabase.from('app_settings').upsert({ key, value }, { onConflict: 'key' })
+    setSettings(prev => ({ ...prev, [key]: value }))
+  }
 
   const today = new Date()
   const startOfYear = new Date(today.getFullYear(), 0, 1)
@@ -72,7 +108,7 @@ export default function HomePage() {
   if (nextBday < today) nextBday.setFullYear(today.getFullYear() + 1)
   const daysUntilBday = Math.ceil((nextBday.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
 
-  const quickLinks: Array<{label: string, url: string}> = settings['quick_links']
+  const quickLinks: Array<{ label: string; url: string }> = settings['quick_links']
     ? JSON.parse(settings['quick_links'])
     : [
         { label: 'School Loop', url: '#' },
@@ -82,21 +118,13 @@ export default function HomePage() {
       ]
 
   function formatDate(d: string) {
-    const dt = new Date(d + 'T12:00:00')
-    return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-  }
-
-  function eventColor(type: string) {
-    if (type === 'red') return 'var(--accent2)'
-    if (type === 'gold') return 'var(--accent3)'
-    return 'var(--accent)'
+    return new Date(d + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
   }
 
   return (
     <div>
       <HeroSection />
 
-      {/* Module grid */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginTop: 20 }}>
 
         {/* Weather */}
@@ -120,12 +148,12 @@ export default function HomePage() {
           <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.15em', textTransform: 'uppercase', color: 'var(--muted)', marginBottom: 10 }}>
             Upcoming Events
           </div>
-          {events.length === 0 ? (
+          {upcoming.length === 0 ? (
             <div style={{ color: 'var(--muted)', fontSize: 12 }}>No upcoming events</div>
           ) : (
-            events.map(ev => (
-              <div key={ev.id} style={{ display: 'flex', alignItems: 'baseline', gap: 10, padding: '5px 0', borderBottom: '1px solid var(--border)' }}>
-                <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: eventColor(ev.type), whiteSpace: 'nowrap', minWidth: 42 }}>
+            upcoming.map((ev, i) => (
+              <div key={i} style={{ display: 'flex', alignItems: 'baseline', gap: 10, padding: '5px 0', borderBottom: '1px solid var(--border)' }}>
+                <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: ev.color, whiteSpace: 'nowrap', minWidth: 42 }}>
                   {formatDate(ev.date)}
                 </span>
                 <span style={{ fontSize: 12, color: 'var(--text)', lineHeight: 1.35 }}>{ev.title}</span>
@@ -141,30 +169,37 @@ export default function HomePage() {
           </div>
           {quickLinks.map((link, i) => (
             <a key={i} href={link.url} target="_blank" rel="noopener noreferrer"
-              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 0', borderBottom: '1px solid var(--border)', fontSize: 12, color: 'var(--mid)', textDecoration: 'none' }}
-            >
+              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 0', borderBottom: '1px solid var(--border)', fontSize: 12, color: 'var(--mid)', textDecoration: 'none' }}>
               <span style={{ fontSize: 11, color: 'var(--accent)', fontWeight: 700 }}>→</span>
               {link.label}
             </a>
           ))}
         </div>
 
-        {/* Benji Stats */}
+        {/* Benji Stats — all values inline-editable */}
         <div className="card" style={{ padding: 16 }}>
           <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.15em', textTransform: 'uppercase', color: 'var(--muted)', marginBottom: 10 }}>
-            Benji Stats
+            Benji Stats <span style={{ fontSize: 9, color: 'var(--border)', fontWeight: 400, letterSpacing: 0, textTransform: 'none', marginLeft: 4 }}>click values to edit</span>
           </div>
           {[
-            { key: 'Age', val: settings['benji_age'] || '6' },
-            { key: 'Grade', val: settings['benji_grade'] || '1st' },
-            { key: 'School', val: settings['benji_school'] || 'Lincoln Elem' },
-            { key: 'Places Visited', val: String(placesCount), accent: true },
-            { key: 'Activities', val: String(activitiesCount) },
-            { key: 'Days until B-Day', val: String(daysUntilBday), accent3: true },
+            { key: 'Age', settingKey: 'benji_age', val: settings['benji_age'] || '6' },
+            { key: 'Grade', settingKey: 'benji_grade', val: settings['benji_grade'] || '1st' },
+            { key: 'School', settingKey: 'benji_school', val: settings['benji_school'] || 'Lincoln Elem' },
+            { key: 'Birthday', settingKey: 'benji_dob', val: settings['benji_dob'] || '2018-04-14' },
           ].map(row => (
             <div key={row.key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '5px 0', borderBottom: '1px solid var(--border)', fontSize: 12 }}>
               <span style={{ color: 'var(--muted)', fontSize: 11, fontWeight: 500 }}>{row.key}</span>
-              <span style={{ fontWeight: 700, color: row.accent ? 'var(--accent)' : row.accent3 ? 'var(--accent3)' : 'var(--text)' }}>{row.val}</span>
+              <EditStat value={row.val} onSave={v => updateSetting(row.settingKey, v)} />
+            </div>
+          ))}
+          {[
+            { key: 'Places Visited', val: String(placesCount), color: 'var(--accent)' },
+            { key: 'Activities', val: String(activitiesCount), color: 'var(--text)' },
+            { key: 'Days until B-Day', val: String(daysUntilBday), color: 'var(--accent3)' },
+          ].map(row => (
+            <div key={row.key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '5px 0', borderBottom: '1px solid var(--border)', fontSize: 12 }}>
+              <span style={{ color: 'var(--muted)', fontSize: 11, fontWeight: 500 }}>{row.key}</span>
+              <span style={{ fontWeight: 700, color: row.color }}>{row.val}</span>
             </div>
           ))}
         </div>

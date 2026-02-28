@@ -21,6 +21,25 @@ interface PlaceVisited {
   year?: number
 }
 
+const GOOGLE_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY || ''
+
+function buildStaticMapUrl(places: PlaceVisited[]): string {
+  if (!GOOGLE_KEY || !places.length) return ''
+  let url = `https://maps.googleapis.com/maps/api/staticmap?center=20,0&zoom=1&size=700x280&scale=2&maptype=roadmap`
+  url += `&style=feature:water|element:geometry|color:0xd4e5e8`
+  url += `&style=feature:landscape|element:geometry|color:0xf0ebe1`
+  url += `&style=feature:road|visibility:off`
+  url += `&style=feature:poi|visibility:off`
+  url += `&style=feature:transit|visibility:off`
+  url += `&style=feature:administrative.country|element:geometry.stroke|color:0xaaaaaa|weight:0.8`
+  places.slice(0, 20).forEach(p => {
+    const color = p.type === 'intl' ? '0xE8A020' : p.type === 'beach' || p.type === 'nature' ? '0x2A7A4B' : '0xC8311A'
+    url += `&markers=color:${color}|size:small|${encodeURIComponent(p.name)}`
+  })
+  url += `&key=${GOOGLE_KEY}`
+  return url
+}
+
 const CATEGORIES = ['travel', 'local', 'museum', 'outdoors']
 const CAT_LABELS: Record<string, string> = { travel: '✈️ Travel', local: '📍 Local LA', museum: '🏛 Museums', outdoors: '🌲 Outdoors' }
 const PLACE_TYPES = ['home', 'city', 'beach', 'nature', 'intl']
@@ -154,40 +173,26 @@ export default function ActivitiesPage() {
 
         {/* Map + Table side by side */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: 16, alignItems: 'start' }}>
-          {/* Map placeholder */}
-          <div style={{
-            background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 3,
-            height: 280, display: 'flex', alignItems: 'center', justifyContent: 'center',
-            color: 'var(--muted)', fontSize: 11, letterSpacing: '0.1em', textTransform: 'uppercase',
-            fontWeight: 600, position: 'relative', overflow: 'hidden',
-          }}>
-            <div style={{
-              position: 'absolute', inset: 0,
-              backgroundImage: 'repeating-linear-gradient(0deg, transparent, transparent 29px, var(--border) 29px, var(--border) 30px), repeating-linear-gradient(90deg, transparent, transparent 29px, var(--border) 29px, var(--border) 30px)',
-              opacity: 0.5,
-            }} />
-            <div style={{ position: 'relative', zIndex: 1, textAlign: 'center' }}>
-              <div style={{ fontSize: 32, marginBottom: 8 }}>🗺️</div>
-              <div>World Map</div>
-              <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 4, fontWeight: 400, letterSpacing: '0.04em', textTransform: 'none' }}>
-                {places.length} places · {places.filter(p => p.type === 'intl').length} international
+          {/* Map */}
+          <div style={{ border: '1px solid var(--border)', borderRadius: 3, overflow: 'hidden', height: 280, background: 'var(--white)', position: 'relative' }}>
+            {places.length > 0 && GOOGLE_KEY ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={buildStaticMapUrl(places)}
+                alt="Places visited map"
+                style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+              />
+            ) : (
+              <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--muted)', fontSize: 12 }}>
+                {places.length === 0 ? 'Add places to see the map' : 'Map loading…'}
               </div>
+            )}
+            {/* Legend overlay */}
+            <div style={{ position: 'absolute', bottom: 8, left: 8, display: 'flex', gap: 8, background: 'rgba(255,255,255,0.85)', padding: '4px 8px', borderRadius: 2, fontSize: 10, fontWeight: 600 }}>
+              <span style={{ color: '#C8311A' }}>● US/Local</span>
+              <span style={{ color: '#2A7A4B' }}>● Nature</span>
+              <span style={{ color: '#E8A020' }}>● International</span>
             </div>
-            {/* Place dots overlay */}
-            {places.slice(0, 8).map((p, i) => (
-              <div key={p.id} title={p.name} style={{
-                position: 'absolute',
-                left: `${15 + (i * 11) % 70}%`,
-                top: `${20 + (i * 17) % 60}%`,
-                width: 10, height: 10,
-                borderRadius: '50%',
-                background: p.type === 'intl' ? 'var(--accent3)' : p.type === 'beach' || p.type === 'nature' ? 'var(--accent)' : 'var(--accent2)',
-                border: '1.5px solid var(--white)',
-                boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
-                cursor: 'default',
-                zIndex: 2,
-              }} />
-            ))}
           </div>
 
           {/* Table */}

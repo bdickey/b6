@@ -47,7 +47,7 @@ export default function TopNav({ onBenjiOpen, onBoomboxToggle, boomboxVisible }:
       padding: '0 24px',
       position: 'sticky',
       top: 0,
-      zIndex: 100,
+      zIndex: 1000,
       height: 44,
     }}>
       {/* Brand */}
