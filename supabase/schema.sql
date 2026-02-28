@@ -100,9 +100,15 @@ create table if not exists restaurants (
   id uuid primary key default gen_random_uuid(),
   name text not null,
   cuisine text,
+  address text,
+  phone text,
   delivery_platform text,
   delivery_url text
 );
+
+-- Migration: run these if the table already exists
+-- alter table restaurants add column if not exists address text;
+-- alter table restaurants add column if not exists phone text;
 
 -- Sitters
 create table if not exists sitters (
