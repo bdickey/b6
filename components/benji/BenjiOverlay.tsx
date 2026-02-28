@@ -99,7 +99,7 @@ export default function BenjiOverlay({ onClose }: Props) {
 
       {/* Main overlay */}
       <div style={{
-        position: 'fixed', inset: 0, zIndex: 800,
+        position: 'fixed', inset: 0, zIndex: 1050,
         background: 'var(--white)',
         display: 'flex', flexDirection: 'column',
         fontFamily: 'Inter, system-ui, sans-serif',

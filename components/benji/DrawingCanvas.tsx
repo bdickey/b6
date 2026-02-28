@@ -109,14 +109,14 @@ export default function DrawingCanvas({ onExit }: Props) {
   }
 
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 500 }}>
+    <div style={{ position: 'fixed', inset: 0, zIndex: 1050 }}>
       {/* White 50% overlay so page shows through */}
-      <div style={{ position: 'fixed', inset: 0, background: 'white', opacity: 0.5, pointerEvents: 'none', zIndex: 499 }} />
+      <div style={{ position: 'fixed', inset: 0, background: 'white', opacity: 0.5, pointerEvents: 'none', zIndex: 1049 }} />
 
       {/* Drawing canvas */}
       <canvas
         ref={canvasRef}
-        style={{ position: 'fixed', inset: 0, zIndex: 500, cursor: 'crosshair', background: 'transparent' }}
+        style={{ position: 'fixed', inset: 0, zIndex: 1050, cursor: 'crosshair', background: 'transparent' }}
         onMouseDown={startDraw}
         onMouseMove={draw}
         onMouseUp={endDraw}
@@ -131,7 +131,7 @@ export default function DrawingCanvas({ onExit }: Props) {
         position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)',
         background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 4,
         display: 'flex', alignItems: 'center', gap: 4, padding: '8px 12px',
-        zIndex: 700, boxShadow: '0 4px 20px rgba(0,0,0,0.13)', whiteSpace: 'nowrap',
+        zIndex: 1100, boxShadow: '0 4px 20px rgba(0,0,0,0.13)', whiteSpace: 'nowrap',
       }}>
         {/* Color swatches */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, paddingRight: 12, borderRight: '1px solid var(--border)', marginRight: 4 }}>
