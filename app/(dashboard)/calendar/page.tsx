@@ -11,6 +11,23 @@ interface CalendarEvent {
   notes?: string
 }
 
+interface AfterschoolProgram {
+  id: string
+  name: string
+  day_time?: string
+  location?: string
+  cost?: string
+  status: string
+}
+
+interface FamilyEvent {
+  id: string
+  date: string
+  name: string
+  who?: string
+  notes?: string
+}
+
 interface AddEventForm {
   date: string
   title: string
@@ -18,24 +35,94 @@ interface AddEventForm {
   notes: string
 }
 
+const PROGRAM_STATUSES = ['consider', 'waitlist', 'enrolled']
+const PROGRAM_STATUS_CLASS: Record<string, string> = {
+  enrolled: 'badge-green', waitlist: 'badge-gold', consider: 'badge-gray',
+}
+
+function parseProgramDays(dayTime?: string): number[] {
+  if (!dayTime) return []
+  const s = dayTime.toLowerCase()
+  const days: number[] = []
+  if (s.includes('sun')) days.push(0)
+  if (s.includes('mon')) days.push(1)
+  if (s.includes('tue')) days.push(2)
+  if (s.includes('wed')) days.push(3)
+  if (s.includes('thu')) days.push(4)
+  if (s.includes('fri')) days.push(5)
+  if (s.includes('sat')) days.push(6)
+  return days
+}
+
+function CycleBadge({ value, options, colorMap, onCycle }: { value?: string; options: string[]; colorMap: Record<string, string>; onCycle: (v: string) => void }) {
+  const v = value || options[0]
+  const cls = colorMap[v] || 'badge-gray'
+  function handleClick() {
+    const idx = options.indexOf(v)
+    const next = options[(idx + 1) % options.length]
+    onCycle(next)
+  }
+  return (
+    <button onClick={handleClick} className={`badge ${cls}`}
+      style={{ cursor: 'pointer', border: 'none', fontFamily: 'inherit' }}
+      title="Click to cycle">
+      {v}
+    </button>
+  )
+}
+
+function EditCell({ value, onSave }: { value?: string; onSave: (v: string) => void }) {
+  const [editing, setEditing] = useState(false)
+  const [v, setV] = useState(value || '')
+  if (editing) return (
+    <input className="inline-input" autoFocus value={v} onChange={e => setV(e.target.value)}
+      onBlur={() => { onSave(v); setEditing(false) }}
+      onKeyDown={e => e.key === 'Enter' && (onSave(v), setEditing(false))}
+    />
+  )
+  return <span onClick={() => setEditing(true)} style={{ cursor: 'text', minWidth: 40, display: 'inline-block' }}>{value || <span style={{ color: 'var(--border)' }}>—</span>}</span>
+}
+
+function SectionHeader({ title, sub, onAdd, addLabel }: { title: string; sub?: string; onAdd: () => void; addLabel: string }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+      <div>
+        <div className="section-label">{title}</div>
+        {sub && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{sub}</div>}
+      </div>
+      <button onClick={onAdd} style={{ fontFamily: 'inherit', fontSize: 11, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--accent)', background: 'none', border: '1px dashed var(--border)', padding: '5px 12px', cursor: 'pointer', borderRadius: 2 }}>
+        {addLabel}
+      </button>
+    </div>
+  )
+}
+
 export default function CalendarPage() {
   const [year, setYear] = useState(new Date().getFullYear())
   const [month, setMonth] = useState(new Date().getMonth())
   const [events, setEvents] = useState<CalendarEvent[]>([])
+  const [programs, setPrograms] = useState<AfterschoolProgram[]>([])
+  const [familyEvents, setFamilyEvents] = useState<FamilyEvent[]>([])
   const [modal, setModal] = useState<{ open: boolean; date: string; event?: CalendarEvent } | null>(null)
   const [form, setForm] = useState<AddEventForm>({ date: '', title: '', type: 'default', notes: '' })
   const supabase = createClient()
 
   const today = new Date()
 
-  useEffect(() => { loadEvents() }, [year, month])
+  useEffect(() => { loadAll() }, [year, month])
 
-  async function loadEvents() {
+  async function loadAll() {
     const start = `${year}-${String(month + 1).padStart(2, '0')}-01`
     const lastDay = new Date(year, month + 1, 0).getDate()
     const end = `${year}-${String(month + 1).padStart(2, '0')}-${lastDay}`
-    const { data } = await supabase.from('calendar_events').select('*').gte('date', start).lte('date', end)
-    if (data) setEvents(data)
+    const [evRes, prRes, feRes] = await Promise.all([
+      supabase.from('calendar_events').select('*').gte('date', start).lte('date', end),
+      supabase.from('afterschool_programs').select('*').order('name'),
+      supabase.from('family_events').select('*').order('date'),
+    ])
+    if (evRes.data) setEvents(evRes.data)
+    if (prRes.data) setPrograms(prRes.data)
+    if (feRes.data) setFamilyEvents(feRes.data)
   }
 
   function prevMonth() {
@@ -65,39 +152,73 @@ export default function CalendarPage() {
       await supabase.from('calendar_events').insert({ date: form.date, title: form.title, type: form.type, notes: form.notes })
     }
     setModal(null)
-    loadEvents()
+    loadAll()
   }
 
   async function deleteEvent(id: string) {
     await supabase.from('calendar_events').delete().eq('id', id)
     setModal(null)
-    loadEvents()
+    loadAll()
+  }
+
+  async function addProgram() {
+    await supabase.from('afterschool_programs').insert({ name: 'New Program', status: 'consider' })
+    loadAll()
+  }
+
+  async function updateProgram(id: string, field: string, value: string) {
+    await supabase.from('afterschool_programs').update({ [field]: value }).eq('id', id)
+    loadAll()
+  }
+
+  async function deleteProgram(id: string) {
+    await supabase.from('afterschool_programs').delete().eq('id', id)
+    loadAll()
+  }
+
+  async function addFamilyEvent() {
+    const todayStr = new Date().toISOString().split('T')[0]
+    await supabase.from('family_events').insert({ date: todayStr, name: 'New Event' })
+    loadAll()
+  }
+
+  async function updateFamilyEvent(id: string, field: string, value: string) {
+    await supabase.from('family_events').update({ [field]: value }).eq('id', id)
+    loadAll()
+  }
+
+  async function deleteFamilyEvent(id: string) {
+    await supabase.from('family_events').delete().eq('id', id)
+    loadAll()
   }
 
   // Build calendar grid
   const firstDay = new Date(year, month, 1).getDay()
   const daysInMonth = new Date(year, month + 1, 0).getDate()
   const prevMonthDays = new Date(year, month, 0).getDate()
-  const cells: Array<{ day: number; current: boolean; dateStr: string }> = []
+  const cells: Array<{ day: number; current: boolean; dateStr: string; dow: number }> = []
 
   for (let i = firstDay - 1; i >= 0; i--) {
     const d = prevMonthDays - i
     const m = month === 0 ? 12 : month
     const y = month === 0 ? year - 1 : year
-    cells.push({ day: d, current: false, dateStr: `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}` })
+    const dateStr = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+    cells.push({ day: d, current: false, dateStr, dow: new Date(dateStr + 'T12:00:00').getDay() })
   }
   for (let d = 1; d <= daysInMonth; d++) {
-    cells.push({ day: d, current: true, dateStr: `${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}` })
+    const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+    cells.push({ day: d, current: true, dateStr, dow: new Date(dateStr + 'T12:00:00').getDay() })
   }
   const remaining = 42 - cells.length
   for (let d = 1; d <= remaining; d++) {
     const m = month === 11 ? 1 : month + 2
     const y = month === 11 ? year + 1 : year
-    cells.push({ day: d, current: false, dateStr: `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}` })
+    const dateStr = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+    cells.push({ day: d, current: false, dateStr, dow: new Date(dateStr + 'T12:00:00').getDay() })
   }
 
-  const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December']
-  const DAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat']
+  const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
+  const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
   function eventColor(type: string) {
     if (type === 'red') return { bg: 'var(--accent2)', color: '#fff' }
@@ -105,14 +226,18 @@ export default function CalendarPage() {
     return { bg: 'var(--accent)', color: '#fff' }
   }
 
-  function todayStr() {
-    return `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`
+  function todayDateStr() {
+    return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
   }
 
+  // Get enrolled/waitlist programs visible on calendar
+  const activePrograms = programs.filter(pr => pr.status === 'enrolled' || pr.status === 'waitlist')
+
   return (
-    <div>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
+
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <button onClick={prevMonth} style={{ fontFamily: 'inherit', fontSize: 18, fontWeight: 700, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', padding: '4px 12px', borderRadius: 2 }}>‹</button>
           <span style={{ fontSize: 13, fontWeight: 700, letterSpacing: '0.15em', textTransform: 'uppercase', color: 'var(--text)', minWidth: 180, textAlign: 'center' }}>
@@ -144,8 +269,12 @@ export default function CalendarPage() {
             {Array.from({ length: 6 }, (_, row) => (
               <tr key={row}>
                 {cells.slice(row * 7, row * 7 + 7).map((cell, col) => {
-                  const isToday = cell.current && cell.dateStr === todayStr()
+                  const isToday = cell.current && cell.dateStr === todayDateStr()
                   const cellEvents = events.filter(ev => ev.date === cell.dateStr)
+                  const cellFamilyEvents = familyEvents.filter(fe => fe.date === cell.dateStr)
+                  const cellPrograms = cell.current
+                    ? activePrograms.filter(pr => parseProgramDays(pr.day_time).includes(cell.dow))
+                    : []
                   return (
                     <td
                       key={col}
@@ -178,6 +307,22 @@ export default function CalendarPage() {
                             </span>
                           )
                         })}
+                        {cellFamilyEvents.map(fe => (
+                          <span
+                            key={fe.id}
+                            style={{ fontSize: 10, fontWeight: 500, color: '#4A3500', background: 'var(--accent3)', padding: '1px 5px', borderRadius: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}
+                          >
+                            {fe.name}
+                          </span>
+                        ))}
+                        {cellPrograms.map(pr => (
+                          <span
+                            key={pr.id}
+                            style={{ fontSize: 10, fontWeight: 500, color: '#3A2000', background: '#F5C842', padding: '1px 5px', borderRadius: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%', fontStyle: 'italic' }}
+                          >
+                            {pr.name}
+                          </span>
+                        ))}
                       </div>
                     </td>
                   )
@@ -188,7 +333,80 @@ export default function CalendarPage() {
         </table>
       </div>
 
-      {/* Modal */}
+      {/* Legend */}
+      <div style={{ display: 'flex', gap: 16, alignItems: 'center', fontSize: 11, color: 'var(--muted)' }}>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          <span style={{ width: 10, height: 10, background: 'var(--accent)', borderRadius: 1, display: 'inline-block' }} /> Event
+        </span>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          <span style={{ width: 10, height: 10, background: 'var(--accent3)', borderRadius: 1, display: 'inline-block' }} /> Family Event
+        </span>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          <span style={{ width: 10, height: 10, background: '#F5C842', borderRadius: 1, display: 'inline-block' }} /> Program (recurring)
+        </span>
+      </div>
+
+      {/* Afterschool Programs */}
+      <div>
+        <SectionHeader title="Afterschool Programs" sub="Enrolled & waitlist programs appear on the calendar" onAdd={addProgram} addLabel="+ Add Program" />
+        <div className="card">
+          <table className="hl-table">
+            <thead><tr>
+              <th>Program</th>
+              <th>Day / Time</th>
+              <th>Location</th>
+              <th>Cost</th>
+              <th>Status</th>
+              <th style={{ width: 28 }}></th>
+            </tr></thead>
+            <tbody>
+              {programs.map(pr => (
+                <tr key={pr.id}>
+                  <td><strong><EditCell value={pr.name} onSave={v => updateProgram(pr.id, 'name', v)} /></strong></td>
+                  <td><EditCell value={pr.day_time} onSave={v => updateProgram(pr.id, 'day_time', v)} /></td>
+                  <td><EditCell value={pr.location} onSave={v => updateProgram(pr.id, 'location', v)} /></td>
+                  <td><EditCell value={pr.cost} onSave={v => updateProgram(pr.id, 'cost', v)} /></td>
+                  <td><CycleBadge value={pr.status} options={PROGRAM_STATUSES} colorMap={PROGRAM_STATUS_CLASS} onCycle={v => updateProgram(pr.id, 'status', v)} /></td>
+                  <td>
+                    <button onClick={() => deleteProgram(pr.id)} style={{ background: 'none', border: 'none', color: 'var(--border)', cursor: 'pointer', fontSize: 13, padding: 0, fontFamily: 'inherit' }} title="Delete">×</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Family Events */}
+      <div>
+        <SectionHeader title="Family Events" sub="Events with family or class — appear on the calendar by date" onAdd={addFamilyEvent} addLabel="+ Add Event" />
+        <div className="card">
+          <table className="hl-table">
+            <thead><tr>
+              <th>Date</th>
+              <th>Event</th>
+              <th>Who</th>
+              <th>Notes</th>
+              <th style={{ width: 28 }}></th>
+            </tr></thead>
+            <tbody>
+              {familyEvents.map(fe => (
+                <tr key={fe.id}>
+                  <td><EditCell value={fe.date} onSave={v => updateFamilyEvent(fe.id, 'date', v)} /></td>
+                  <td><strong><EditCell value={fe.name} onSave={v => updateFamilyEvent(fe.id, 'name', v)} /></strong></td>
+                  <td><EditCell value={fe.who} onSave={v => updateFamilyEvent(fe.id, 'who', v)} /></td>
+                  <td><EditCell value={fe.notes} onSave={v => updateFamilyEvent(fe.id, 'notes', v)} /></td>
+                  <td>
+                    <button onClick={() => deleteFamilyEvent(fe.id)} style={{ background: 'none', border: 'none', color: 'var(--border)', cursor: 'pointer', fontSize: 13, padding: 0, fontFamily: 'inherit' }} title="Delete">×</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Add Event Modal */}
       {modal?.open && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 300 }} onClick={() => setModal(null)}>
           <div className="card" style={{ padding: '24px 28px', width: 380, maxWidth: '90vw' }} onClick={e => e.stopPropagation()}>
@@ -210,8 +428,8 @@ export default function CalendarPage() {
             </div>
 
             <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-              {[{v:'default',l:'Green'},{v:'red',l:'Red'},{v:'gold',l:'Gold'}].map(opt => (
-                <button key={opt.v} onClick={() => setForm(f => ({...f, type: opt.v}))}
+              {[{ v: 'default', l: 'Green' }, { v: 'red', l: 'Red' }, { v: 'gold', l: 'Gold' }].map(opt => (
+                <button key={opt.v} onClick={() => setForm(f => ({ ...f, type: opt.v }))}
                   style={{
                     flex: 1, padding: '6px 0', fontSize: 11, fontWeight: 600,
                     border: '1px solid', cursor: 'pointer', borderRadius: 2, fontFamily: 'inherit',
