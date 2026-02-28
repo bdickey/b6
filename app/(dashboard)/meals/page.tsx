@@ -36,6 +36,12 @@ interface Restaurant {
   delivery_url?: string
 }
 
+interface DayEvent {
+  title: string
+  type: 'calendar' | 'family' | 'program'
+  timeHint?: string
+}
+
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
 function getWeekOf(offset = 0) {
@@ -46,12 +52,27 @@ function getWeekOf(offset = 0) {
   return sun.toISOString().split('T')[0]
 }
 
+function parseProgramDays(dayTime?: string): number[] {
+  if (!dayTime) return []
+  const s = dayTime.toLowerCase()
+  const days: number[] = []
+  if (s.includes('sun')) days.push(0)
+  if (s.includes('mon')) days.push(1)
+  if (s.includes('tue')) days.push(2)
+  if (s.includes('wed')) days.push(3)
+  if (s.includes('thu')) days.push(4)
+  if (s.includes('fri')) days.push(5)
+  if (s.includes('sat')) days.push(6)
+  return days
+}
+
 export default function MealsPage() {
   const [weekOf, setWeekOf] = useState(getWeekOf(0))
   const [meals, setMeals] = useState<MealPlan[]>([])
   const [dishes, setDishes] = useState<CoreDish[]>([])
   const [groceries, setGroceries] = useState<GroceryItem[]>([])
   const [restaurants, setRestaurants] = useState<Restaurant[]>([])
+  const [dayEvents, setDayEvents] = useState<Record<string, DayEvent[]>>({})
   const [subTab, setSubTab] = useState<'dishes' | 'grocery' | 'restaurants'>('dishes')
   const [copied, setCopied] = useState(false)
   const supabase = createClient()
@@ -60,8 +81,45 @@ export default function MealsPage() {
   useEffect(() => { loadStatic() }, [])
 
   async function loadMeals() {
-    const { data } = await supabase.from('meals_plan').select('*').eq('week_of', weekOf)
-    if (data) setMeals(data)
+    const weekDate = new Date(weekOf + 'T12:00:00')
+    const dates = DAYS.map((_, i) => {
+      const d = new Date(weekDate)
+      d.setDate(weekDate.getDate() + i)
+      return d.toISOString().split('T')[0]
+    })
+    const start = dates[0]
+    const end = dates[6]
+
+    const [mealsRes, calRes, feRes, prRes] = await Promise.all([
+      supabase.from('meals_plan').select('*').eq('week_of', weekOf),
+      supabase.from('calendar_events').select('*').gte('date', start).lte('date', end),
+      supabase.from('family_events').select('*').gte('date', start).lte('date', end),
+      supabase.from('afterschool_programs').select('*').in('status', ['enrolled', 'waitlist']),
+    ])
+
+    if (mealsRes.data) setMeals(mealsRes.data)
+
+    // Build dayEvents map
+    const map: Record<string, DayEvent[]> = {}
+    DAYS.forEach((day, i) => {
+      const date = dates[i]
+      const evs: DayEvent[] = []
+      if (calRes.data) {
+        calRes.data.filter(e => e.date === date).forEach(e => evs.push({ title: e.title, type: 'calendar' }))
+      }
+      if (feRes.data) {
+        feRes.data.filter(e => e.date === date).forEach(e => evs.push({ title: e.name, type: 'family' }))
+      }
+      if (prRes.data) {
+        const dow = new Date(date + 'T12:00:00').getDay()
+        prRes.data.filter(p => parseProgramDays(p.day_time).includes(dow)).forEach(p => {
+          const time = p.day_time ? p.day_time.replace(/^[a-z]+\s/i, '') : ''
+          evs.push({ title: p.name, type: 'program', timeHint: time })
+        })
+      }
+      map[day] = evs
+    })
+    setDayEvents(map)
   }
 
   async function loadStatic() {
@@ -89,11 +147,39 @@ export default function MealsPage() {
     loadMeals()
   }
 
-  function EditCell({ value, onSave, style }: { value?: string; onSave: (v: string) => void; style?: React.CSSProperties }) {
+  async function clearMeal(day: string) {
+    const existing = mealForDay(day)
+    if (existing) {
+      await supabase.from('meals_plan').delete().eq('id', existing.id)
+      loadMeals()
+    }
+  }
+
+  async function updateDish(id: string, field: string, value: string) {
+    await supabase.from('core_dishes').update({ [field]: value }).eq('id', id)
+    loadStatic()
+  }
+
+  async function deleteDish(id: string) {
+    await supabase.from('core_dishes').delete().eq('id', id)
+    loadStatic()
+  }
+
+  async function updateRestaurant(id: string, field: string, value: string) {
+    await supabase.from('restaurants').update({ [field]: value }).eq('id', id)
+    loadStatic()
+  }
+
+  async function deleteRestaurant(id: string) {
+    await supabase.from('restaurants').delete().eq('id', id)
+    loadStatic()
+  }
+
+  function EditCell({ value, onSave, placeholder, style }: { value?: string; onSave: (v: string) => void; placeholder?: string; style?: React.CSSProperties }) {
     const [editing, setEditing] = useState(false)
     const [v, setV] = useState(value || '')
     if (editing) return (
-      <input className="inline-input" autoFocus value={v}
+      <input className="inline-input" autoFocus value={v} placeholder={placeholder}
         onChange={e => setV(e.target.value)}
         onBlur={() => { onSave(v); setEditing(false) }}
         onKeyDown={e => e.key === 'Enter' && (onSave(v), setEditing(false))}
@@ -141,6 +227,12 @@ export default function MealsPage() {
     loadStatic()
   }
 
+  const eventDotColor: Record<string, string> = {
+    calendar: 'var(--accent)',
+    family: 'var(--accent3)',
+    program: '#F5C842',
+  }
+
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, alignItems: 'start' }}>
 
@@ -164,25 +256,48 @@ export default function MealsPage() {
               <th>Dinner</th>
               <th style={{ width: 70 }}>Time</th>
               <th style={{ width: 90 }}>Who Cooks</th>
+              <th style={{ width: 20 }}></th>
             </tr></thead>
             <tbody>
               {DAYS.map(day => {
                 const meal = mealForDay(day)
                 const isSpecial = day === 'Fri'
+                const evs = dayEvents[day] || []
                 return (
                   <tr key={day} style={isSpecial ? { background: 'rgba(232,160,32,0.05)' } : undefined}>
                     <td>
                       <span style={{ fontWeight: 700, color: isSpecial ? 'var(--accent3)' : 'var(--text)' }}>{day}</span>
                       {isSpecial && <div style={{ fontSize: 9, color: 'var(--accent3)', fontWeight: 600, letterSpacing: '0.08em' }}>SPECIAL</div>}
                     </td>
-                    <td><EditCell value={meal?.dinner} onSave={v => updateMeal(day, 'dinner', v)} /></td>
+                    <td>
+                      <EditCell value={meal?.dinner} onSave={v => updateMeal(day, 'dinner', v)} />
+                      {evs.length > 0 && (
+                        <div style={{ marginTop: 3, display: 'flex', flexWrap: 'wrap', gap: 3 }}>
+                          {evs.map((ev, i) => (
+                            <span key={i} style={{ fontSize: 9, color: eventDotColor[ev.type], fontWeight: 600, letterSpacing: '0.04em', opacity: 0.85 }}>
+                              {ev.timeHint ? `${ev.title} (${ev.timeHint})` : ev.title}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </td>
                     <td><EditCell value={meal?.time} onSave={v => updateMeal(day, 'time', v)} /></td>
                     <td><EditCell value={meal?.who_cooks} onSave={v => updateMeal(day, 'who_cooks', v)} /></td>
+                    <td>
+                      {meal && (
+                        <button onClick={() => clearMeal(day)} title="Clear day" style={{ background: 'none', border: 'none', color: 'var(--border)', cursor: 'pointer', fontSize: 13, padding: 0, fontFamily: 'inherit' }}>×</button>
+                      )}
+                    </td>
                   </tr>
                 )
               })}
             </tbody>
           </table>
+        </div>
+        <div style={{ marginTop: 8, fontSize: 10, color: 'var(--muted)', display: 'flex', gap: 12 }}>
+          <span style={{ color: 'var(--accent)' }}>● events</span>
+          <span style={{ color: 'var(--accent3)' }}>● family</span>
+          <span style={{ color: '#F5C842' }}>● programs</span>
         </div>
       </div>
 
@@ -211,12 +326,17 @@ export default function MealsPage() {
                 </div>
                 <div className="card">
                   <table className="hl-table">
-                    <thead><tr><th>Dish</th><th>Time</th></tr></thead>
+                    <thead><tr><th>Dish</th><th style={{ width: 60 }}>Mins</th><th style={{ width: 24 }}></th></tr></thead>
                     <tbody>
                       {dishes.filter(d => d.dish_type === type).map(d => (
                         <tr key={d.id}>
-                          <td>{d.name}</td>
-                          <td style={{ color: 'var(--muted)', fontSize: 11 }}>{d.time_mins ? `${d.time_mins}m` : '—'}</td>
+                          <td><EditCell value={d.name} onSave={v => updateDish(d.id, 'name', v)} /></td>
+                          <td style={{ color: 'var(--muted)', fontSize: 11 }}>
+                            <EditCell value={d.time_mins ? String(d.time_mins) : ''} onSave={v => updateDish(d.id, 'time_mins', v)} />
+                          </td>
+                          <td>
+                            <button onClick={() => deleteDish(d.id)} style={{ background: 'none', border: 'none', color: 'var(--border)', cursor: 'pointer', fontSize: 13, padding: 0, fontFamily: 'inherit' }}>×</button>
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -248,7 +368,7 @@ export default function MealsPage() {
                       <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 12px', borderBottom: '1px solid var(--border)' }}>
                         <input type="checkbox" checked={item.checked} onChange={() => toggleGrocery(item.id, item.checked)}
                           style={{ accentColor: 'var(--accent)', cursor: 'pointer' }} />
-                        <span style={{ fontSize: 13, color: item.checked ? 'var(--muted)' : 'var(--text)', textDecoration: item.checked ? 'line-through' : 'none' }}>{item.name}</span>
+                        <span style={{ fontSize: 13, color: item.checked ? 'var(--muted)' : 'var(--text)', textDecoration: item.checked ? 'line-through' : 'none', flex: 1 }}>{item.name}</span>
                       </div>
                     ))}
                     {items.length === 0 && <div style={{ padding: '8px 12px', fontSize: 12, color: 'var(--muted)' }}>No items</div>}
@@ -266,19 +386,22 @@ export default function MealsPage() {
             </div>
             <div className="card">
               <table className="hl-table">
-                <thead><tr><th>Name</th><th>Cuisine</th><th>Order</th></tr></thead>
+                <thead><tr><th>Name</th><th>Cuisine</th><th>Platform</th><th>URL</th><th style={{ width: 24 }}></th></tr></thead>
                 <tbody>
                   {restaurants.map(r => (
                     <tr key={r.id}>
-                      <td><strong>{r.name}</strong></td>
-                      <td style={{ color: 'var(--muted)' }}>{r.cuisine || '—'}</td>
+                      <td><strong><EditCell value={r.name} onSave={v => updateRestaurant(r.id, 'name', v)} /></strong></td>
+                      <td><EditCell value={r.cuisine} onSave={v => updateRestaurant(r.id, 'cuisine', v)} /></td>
+                      <td><EditCell value={r.delivery_platform} onSave={v => updateRestaurant(r.id, 'delivery_platform', v)} /></td>
                       <td>
-                        {r.delivery_url ? (
+                        <EditCell value={r.delivery_url} onSave={v => updateRestaurant(r.id, 'delivery_url', v)} />
+                        {r.delivery_url && (
                           <a href={r.delivery_url} target="_blank" rel="noopener noreferrer"
-                            style={{ fontSize: 11, fontWeight: 600, color: 'var(--accent)', textDecoration: 'none' }}>
-                            {r.delivery_platform || 'Order'} →
-                          </a>
-                        ) : <span style={{ color: 'var(--border)' }}>—</span>}
+                            style={{ fontSize: 10, color: 'var(--accent)', marginLeft: 4 }}>↗</a>
+                        )}
+                      </td>
+                      <td>
+                        <button onClick={() => deleteRestaurant(r.id)} style={{ background: 'none', border: 'none', color: 'var(--border)', cursor: 'pointer', fontSize: 13, padding: 0, fontFamily: 'inherit' }}>×</button>
                       </td>
                     </tr>
                   ))}
