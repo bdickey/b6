@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 
 // Real animal/object audio files (Wikimedia Commons, public domain)
@@ -301,7 +301,6 @@ export default function SpellingGame() {
         if (next >= current.word.length) {
           // Word complete!
           setCelebrating(true)
-          setLastCorrect(current)
           playWordSound(current.word)
           fetchYouTubeVideo(current.word).then(id => {
             if (id) { setVideoId(id); setShowVideo(true) }
