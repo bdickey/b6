@@ -11,16 +11,19 @@ interface Props {
 
 type Tab = 'spell' | 'draw' | 'type'
 
-// Deterministic confetti so no hydration mismatch
-const CONFETTI_PIECES = Array.from({ length: 55 }, (_, i) => ({
+const COLORS = ['#FF6B6B','#FF3CAC','#4ECDC4','#45B7D1','#96CEB4','#FFEAA7','#DDA0DD','#98D8C8','#F7DC6F','#FFB347','#B8E986','#FF8C42','#A8FF3E','#00F5FF','#FF006E','#FB5607']
+// Deterministic confetti so no hydration mismatch — 120 pieces, varied shapes, longer fall
+const CONFETTI_PIECES = Array.from({ length: 120 }, (_, i) => ({
   id: i,
   left: ((i * 73 + 11) % 100),
-  delay: ((i * 53) % 80) / 100,
-  duration: 1.4 + ((i * 37) % 100) / 100,
-  color: ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD', '#98D8C8', '#F7DC6F', '#FFB347', '#B8E986'][i % 10],
-  size: 8 + (i * 7) % 8,
-  isCircle: i % 3 === 0,
+  delay: ((i * 37) % 300) / 100,           // up to 3s staggered delay
+  duration: 2.5 + ((i * 53) % 300) / 100,  // 2.5s – 5.5s fall
+  color: COLORS[i % COLORS.length],
+  size: 6 + (i * 11) % 16,                 // 6px – 22px
+  isCircle: i % 4 === 0,
+  isLong: i % 5 === 1,                      // ribbon-style pieces
   rotation: (i * 47) % 360,
+  drift: ((i * 61) % 80) - 40,             // horizontal drift -40px to +40px
 }))
 
 export default function BenjiOverlay({ onClose }: Props) {
@@ -30,8 +33,8 @@ export default function BenjiOverlay({ onClose }: Props) {
   const [introFading, setIntroFading] = useState(false)
 
   useEffect(() => {
-    const t1 = setTimeout(() => setIntroFading(true), 1600)
-    const t2 = setTimeout(() => setShowIntro(false), 2100)
+    const t1 = setTimeout(() => setIntroFading(true), 2800)
+    const t2 = setTimeout(() => setShowIntro(false), 3400)
     return () => { clearTimeout(t1); clearTimeout(t2) }
   }, [])
 
@@ -60,13 +63,15 @@ export default function BenjiOverlay({ onClose }: Props) {
         <div style={{ position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 1200, overflow: 'hidden' }}>
           {CONFETTI_PIECES.map(p => (
             <div key={p.id} style={{
-              position: 'absolute', top: -20, left: `${p.left}%`,
-              width: p.size, height: p.size,
+              position: 'absolute', top: -30, left: `${p.left}%`,
+              width: p.isLong ? p.size / 2 : p.size,
+              height: p.isLong ? p.size * 3 : p.size,
               background: p.color,
-              borderRadius: p.isCircle ? '50%' : '2px',
+              borderRadius: p.isCircle ? '50%' : p.isLong ? '2px' : '3px',
               transform: `rotate(${p.rotation}deg)`,
               animation: `confetti-fall ${p.duration}s ${p.delay}s ease-in both`,
-            }} />
+              '--drift': `${p.drift}px`,
+            } as React.CSSProperties} />
           ))}
         </div>
       )}

@@ -3,6 +3,91 @@
 import { useState, useEffect, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 
+// Sound phrases spoken aloud when Benji gets the word right
+const WORD_SOUNDS: Record<string, { text: string; pitch?: number; rate?: number }> = {
+  // Animals
+  cat:    { text: 'meow meow meow!', pitch: 1.4, rate: 1.1 },
+  dog:    { text: 'woof woof woof!', pitch: 0.9, rate: 1.0 },
+  bee:    { text: 'bzzzzzzz!', pitch: 1.8, rate: 1.4 },
+  bear:   { text: 'grooowl!', pitch: 0.5, rate: 0.7 },
+  bird:   { text: 'tweet tweet tweet!', pitch: 1.7, rate: 1.3 },
+  fish:   { text: 'blub blub blub!', pitch: 1.2, rate: 0.9 },
+  frog:   { text: 'ribbit ribbit ribbit!', pitch: 1.1, rate: 1.0 },
+  duck:   { text: 'quack quack quack!', pitch: 1.2, rate: 1.1 },
+  lion:   { text: 'ROAAAAR!', pitch: 0.4, rate: 0.6 },
+  wolf:   { text: 'awooooooo!', pitch: 0.6, rate: 0.6 },
+  horse:  { text: 'neigh!', pitch: 1.1, rate: 0.9 },
+  tiger:  { text: 'ROAAAAR!', pitch: 0.45, rate: 0.65 },
+  whale:  { text: 'ooooooh woooo!', pitch: 0.4, rate: 0.5 },
+  panda:  { text: 'squeak squeak!', pitch: 1.6, rate: 1.0 },
+  eagle:  { text: 'screeech!', pitch: 1.5, rate: 0.8 },
+  sheep:  { text: 'baa baa baa!', pitch: 1.1, rate: 0.9 },
+  snake:  { text: 'hissssss!', pitch: 0.8, rate: 0.7 },
+  bunny:  { text: 'squeak squeak!', pitch: 1.7, rate: 1.1 },
+  shark:  { text: 'dun dun dun dun!', pitch: 0.5, rate: 0.8 },
+  snail:  { text: 'slurp slurp!', pitch: 0.9, rate: 0.5 },
+  // Instruments & objects with sounds
+  drum:   { text: 'boom boom boom!', pitch: 0.5, rate: 0.9 },
+  bell:   { text: 'ding ding ding!', pitch: 1.8, rate: 1.0 },
+  // Nature
+  sun:    { text: 'ahhhhh so warm!', pitch: 1.2, rate: 0.8 },
+  rain:   { text: 'pitter patter pitter patter!', pitch: 1.3, rate: 1.2 },
+  wind:   { text: 'whoooooosh!', pitch: 1.1, rate: 0.7 },
+  moon:   { text: 'oooooh spooky!', pitch: 0.8, rate: 0.6 },
+  star:   { text: 'twinkle twinkle!', pitch: 1.6, rate: 0.9 },
+  tree:   { text: 'rustle rustle rustle!', pitch: 1.0, rate: 0.9 },
+  rose:   { text: 'sniff sniff ahhh!', pitch: 1.2, rate: 0.9 },
+  grape:  { text: 'squish squish!', pitch: 1.1, rate: 1.0 },
+  // Food
+  cake:   { text: 'yummmm yummm!', pitch: 1.3, rate: 0.9 },
+  apple:  { text: 'crunch crunch crunch!', pitch: 1.1, rate: 1.1 },
+  lemon:  { text: 'sour! blegh!', pitch: 1.5, rate: 1.0 },
+  milk:   { text: 'glug glug glug!', pitch: 1.1, rate: 1.0 },
+  corn:   { text: 'crunch crunch!', pitch: 1.0, rate: 1.1 },
+  // Objects
+  hat:    { text: 'ta daaa!', pitch: 1.3, rate: 1.0 },
+  kite:   { text: 'whoooosh!', pitch: 1.2, rate: 0.8 },
+  boat:   { text: 'splash splash splash!', pitch: 1.0, rate: 1.0 },
+  door:   { text: 'creeeak! bang!', pitch: 0.8, rate: 0.8 },
+  flag:   { text: 'flap flap flap!', pitch: 1.1, rate: 1.1 },
+  ball:   { text: 'boing boing boing!', pitch: 1.4, rate: 1.2 },
+  fist:   { text: 'pow! wham!', pitch: 0.8, rate: 1.1 },
+  gift:   { text: 'ooooh wow! yaaay!', pitch: 1.5, rate: 1.0 },
+  lamp:   { text: 'click! ahhhh!', pitch: 1.3, rate: 1.0 },
+  nest:   { text: 'tweet tweet tweet!', pitch: 1.7, rate: 1.2 },
+  sand:   { text: 'swoooosh!', pitch: 1.0, rate: 0.8 },
+  blue:   { text: 'ooooh so blue!', pitch: 1.2, rate: 0.9 },
+}
+
+const FALLBACK_SOUNDS = [
+  { text: 'WAHOOOO!',      pitch: 1.6, rate: 1.1 },
+  { text: 'YEEEHAW!',      pitch: 1.4, rate: 1.0 },
+  { text: 'BOOOOOM!',      pitch: 0.4, rate: 0.7 },
+  { text: 'ZAP ZAP ZAP!',  pitch: 1.7, rate: 1.3 },
+  { text: 'KAPOW!',        pitch: 1.0, rate: 1.1 },
+  { text: 'WUBWUBWUB!',    pitch: 0.5, rate: 1.4 },
+  { text: 'SPLAT!',        pitch: 1.2, rate: 1.0 },
+  { text: 'ZOOOOOOM!',     pitch: 1.3, rate: 0.8 },
+  { text: 'BOING BOING BOING!', pitch: 1.5, rate: 1.2 },
+  { text: 'NEEEEOW!',      pitch: 1.8, rate: 0.9 },
+]
+
+function playWordSound(word: string) {
+  if (typeof window === 'undefined' || !window.speechSynthesis) return
+  const sound = WORD_SOUNDS[word] ?? FALLBACK_SOUNDS[Math.floor(Math.random() * FALLBACK_SOUNDS.length)]
+  // Small delay prevents Chrome speechSynthesis silent-fail bug
+  setTimeout(() => {
+    window.speechSynthesis.cancel()
+    setTimeout(() => {
+      const utterance = new SpeechSynthesisUtterance(sound.text)
+      utterance.pitch = sound.pitch ?? 1.0
+      utterance.rate = sound.rate ?? 1.0
+      utterance.volume = 1.0
+      window.speechSynthesis.speak(utterance)
+    }, 50)
+  }, 0)
+}
+
 const SPELL_WORDS = [
   { word: 'cat', emoji: '🐱', hint: 'says meow' },
   { word: 'dog', emoji: '🐶', hint: 'says woof' },
@@ -67,17 +152,38 @@ interface SlotState {
   state: 'blank' | 'active' | 'correct' | 'wrong'
 }
 
+function randomPos() {
+  // Prefer corners/edges so the score doesn't cover the game center
+  const zones = [
+    [8, 18, 4, 16],   // top-left    [top-min, top-max, left-min, left-max]
+    [8, 18, 72, 82],  // top-right
+    [68, 78, 4, 16],  // bottom-left
+    [68, 78, 70, 80], // bottom-right
+    [38, 52, 3, 13],  // mid-left
+    [38, 52, 76, 86], // mid-right
+  ]
+  const [t0, t1, l0, l1] = zones[Math.floor(Math.random() * zones.length)]
+  return {
+    top: t0 + Math.random() * (t1 - t0),
+    left: l0 + Math.random() * (l1 - l0),
+  }
+}
+
+function pickRandom(exclude?: string) {
+  const pool = exclude ? SPELL_WORDS.filter(w => w.word !== exclude) : SPELL_WORDS
+  return pool[Math.floor(Math.random() * pool.length)]
+}
+
 export default function SpellingGame() {
-  const [queue, setQueue] = useState(() => shuffle(SPELL_WORDS))
-  const [queueIdx, setQueueIdx] = useState(0)
+  const [current, setCurrent] = useState(() => pickRandom())
   const [slots, setSlots] = useState<SlotState[]>([])
   const [activeSlot, setActiveSlot] = useState(0)
   const [celebrating, setCelebrating] = useState(false)
   const [sessionCorrect, setSessionCorrect] = useState(0)
   const [sessionTotal, setSessionTotal] = useState(0)
+  const [scorePos, setScorePos] = useState({ top: 68, left: 4 })
+  const [scorePopping, setScorePopping] = useState(false)
   const supabase = createClient()
-
-  const current = queue[queueIdx % queue.length]
 
   const loadWord = useCallback((word: string) => {
     setSlots(word.split('').map((_, i) => ({ letter: '', state: i === 0 ? 'active' : 'blank' })))
@@ -87,7 +193,7 @@ export default function SpellingGame() {
 
   useEffect(() => {
     loadWord(current.word)
-  }, [queueIdx, queue, loadWord, current.word])
+  }, [current, loadWord])
 
   useEffect(() => {
     function handleKey(e: KeyboardEvent) {
@@ -104,16 +210,15 @@ export default function SpellingGame() {
         if (next >= current.word.length) {
           // Word complete!
           setCelebrating(true)
+          playWordSound(current.word)
           setSessionCorrect(c => c + 1)
           setSessionTotal(t => t + 1)
+          setScorePos(randomPos())
+          setScorePopping(true)
+          setTimeout(() => setScorePopping(false), 700)
           supabase.from('benji_spelling_log').insert({ correct: 1, total: 1 }).then(() => {})
           setTimeout(() => {
-            if (queueIdx + 1 >= queue.length) {
-              setQueue(shuffle(SPELL_WORDS))
-              setQueueIdx(0)
-            } else {
-              setQueueIdx(i => i + 1)
-            }
+            setCurrent(prev => pickRandom(prev.word))
           }, 1600)
         } else {
           setActiveSlot(next)
@@ -134,15 +239,10 @@ export default function SpellingGame() {
 
     window.addEventListener('keydown', handleKey)
     return () => window.removeEventListener('keydown', handleKey)
-  }, [activeSlot, celebrating, current, queue, queueIdx, supabase])
+  }, [activeSlot, celebrating, current, supabase])
 
   function skipWord() {
-    if (queueIdx + 1 >= queue.length) {
-      setQueue(shuffle(SPELL_WORDS))
-      setQueueIdx(0)
-    } else {
-      setQueueIdx(i => i + 1)
-    }
+    setCurrent(prev => pickRandom(prev.word))
   }
 
   return (
@@ -191,11 +291,37 @@ export default function SpellingGame() {
         </button>
       )}
 
-      {/* Score */}
-      <div style={{ position: 'absolute', bottom: 24, fontSize: 13, color: 'var(--muted)' }}>
-        {sessionCorrect} correct this session
-        {sessionTotal > 0 && sessionTotal > sessionCorrect && ` · ${sessionTotal - sessionCorrect} missed`}
-      </div>
+      {/* Floating score counter */}
+      {sessionCorrect > 0 && (
+        <div style={{
+          position: 'fixed',
+          top: `${scorePos.top}vh`,
+          left: `${scorePos.left}vw`,
+          zIndex: 1055,
+          pointerEvents: 'none',
+          userSelect: 'none',
+          lineHeight: 1,
+          transition: 'top 0.55s cubic-bezier(0.34,1.56,0.64,1), left 0.55s cubic-bezier(0.34,1.56,0.64,1)',
+          animation: scorePopping ? 'score-pop 0.7s cubic-bezier(0.34,1.56,0.64,1)' : undefined,
+        }}>
+          <div style={{
+            fontSize: 'clamp(100px, 14vw, 180px)',
+            fontWeight: 900,
+            fontFamily: 'Inter, system-ui, sans-serif',
+            color: 'var(--accent)',
+            WebkitTextStroke: '3px rgba(38,126,92,0.3)',
+          }}>
+            {sessionCorrect}
+          </div>
+          <div style={{
+            fontSize: 13, fontWeight: 700, letterSpacing: '0.1em',
+            textTransform: 'uppercase', color: 'var(--mid)',
+            textAlign: 'center', marginTop: -8,
+          }}>
+            correct
+          </div>
+        </div>
+      )}
     </div>
   )
 }
