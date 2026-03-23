@@ -1,89 +1,106 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 
-// Sound phrases spoken aloud when Benji gets the word right
-const WORD_SOUNDS: Record<string, { text: string; pitch?: number; rate?: number }> = {
-  // Animals
-  cat:    { text: 'meow meow meow!', pitch: 1.4, rate: 1.1 },
-  dog:    { text: 'woof woof woof!', pitch: 0.9, rate: 1.0 },
-  bee:    { text: 'bzzzzzzz!', pitch: 1.8, rate: 1.4 },
-  bear:   { text: 'grooowl!', pitch: 0.5, rate: 0.7 },
-  bird:   { text: 'tweet tweet tweet!', pitch: 1.7, rate: 1.3 },
-  fish:   { text: 'blub blub blub!', pitch: 1.2, rate: 0.9 },
-  frog:   { text: 'ribbit ribbit ribbit!', pitch: 1.1, rate: 1.0 },
-  duck:   { text: 'quack quack quack!', pitch: 1.2, rate: 1.1 },
-  lion:   { text: 'ROAAAAR!', pitch: 0.4, rate: 0.6 },
-  wolf:   { text: 'awooooooo!', pitch: 0.6, rate: 0.6 },
-  horse:  { text: 'neigh!', pitch: 1.1, rate: 0.9 },
-  tiger:  { text: 'ROAAAAR!', pitch: 0.45, rate: 0.65 },
-  whale:  { text: 'ooooooh woooo!', pitch: 0.4, rate: 0.5 },
-  panda:  { text: 'squeak squeak!', pitch: 1.6, rate: 1.0 },
-  eagle:  { text: 'screeech!', pitch: 1.5, rate: 0.8 },
-  sheep:  { text: 'baa baa baa!', pitch: 1.1, rate: 0.9 },
-  snake:  { text: 'hissssss!', pitch: 0.8, rate: 0.7 },
-  bunny:  { text: 'squeak squeak!', pitch: 1.7, rate: 1.1 },
-  shark:  { text: 'dun dun dun dun!', pitch: 0.5, rate: 0.8 },
-  snail:  { text: 'slurp slurp!', pitch: 0.9, rate: 0.5 },
-  // Instruments & objects with sounds
-  drum:   { text: 'boom boom boom!', pitch: 0.5, rate: 0.9 },
-  bell:   { text: 'ding ding ding!', pitch: 1.8, rate: 1.0 },
-  // Nature
-  sun:    { text: 'ahhhhh so warm!', pitch: 1.2, rate: 0.8 },
-  rain:   { text: 'pitter patter pitter patter!', pitch: 1.3, rate: 1.2 },
-  wind:   { text: 'whoooooosh!', pitch: 1.1, rate: 0.7 },
-  moon:   { text: 'oooooh spooky!', pitch: 0.8, rate: 0.6 },
-  star:   { text: 'twinkle twinkle!', pitch: 1.6, rate: 0.9 },
-  tree:   { text: 'rustle rustle rustle!', pitch: 1.0, rate: 0.9 },
-  rose:   { text: 'sniff sniff ahhh!', pitch: 1.2, rate: 0.9 },
-  grape:  { text: 'squish squish!', pitch: 1.1, rate: 1.0 },
-  // Food
-  cake:   { text: 'yummmm yummm!', pitch: 1.3, rate: 0.9 },
-  apple:  { text: 'crunch crunch crunch!', pitch: 1.1, rate: 1.1 },
-  lemon:  { text: 'sour! blegh!', pitch: 1.5, rate: 1.0 },
-  milk:   { text: 'glug glug glug!', pitch: 1.1, rate: 1.0 },
-  corn:   { text: 'crunch crunch!', pitch: 1.0, rate: 1.1 },
-  // Objects
-  hat:    { text: 'ta daaa!', pitch: 1.3, rate: 1.0 },
-  kite:   { text: 'whoooosh!', pitch: 1.2, rate: 0.8 },
-  boat:   { text: 'splash splash splash!', pitch: 1.0, rate: 1.0 },
-  door:   { text: 'creeeak! bang!', pitch: 0.8, rate: 0.8 },
-  flag:   { text: 'flap flap flap!', pitch: 1.1, rate: 1.1 },
-  ball:   { text: 'boing boing boing!', pitch: 1.4, rate: 1.2 },
-  fist:   { text: 'pow! wham!', pitch: 0.8, rate: 1.1 },
-  gift:   { text: 'ooooh wow! yaaay!', pitch: 1.5, rate: 1.0 },
-  lamp:   { text: 'click! ahhhh!', pitch: 1.3, rate: 1.0 },
-  nest:   { text: 'tweet tweet tweet!', pitch: 1.7, rate: 1.2 },
-  sand:   { text: 'swoooosh!', pitch: 1.0, rate: 0.8 },
-  blue:   { text: 'ooooh so blue!', pitch: 1.2, rate: 0.9 },
+// Real animal/object audio files (Wikimedia Commons, public domain)
+const WORD_AUDIO: Record<string, string> = {
+  cat:   'https://upload.wikimedia.org/wikipedia/commons/8/81/Meow_of_a_Siamese_cat_-_freemaster2.wav',
+  dog:   'https://upload.wikimedia.org/wikipedia/commons/1/1c/Perro_ladrando.ogg',
+  bee:   'https://upload.wikimedia.org/wikipedia/commons/1/11/263673_ylearkisto_mehilainen-tarhamehilainen-parvi-bees-honeybees-a-swarm-of-bees-buzzing-among-the-flowers-apis-mellifera.wav',
+  bear:  'https://upload.wikimedia.org/wikipedia/commons/4/4e/Bear_growl.ogg',
+  bird:  'https://upload.wikimedia.org/wikipedia/commons/3/30/Common_Blackbird_song_%28Turdus_merula%29.ogg',
+  frog:  'https://upload.wikimedia.org/wikipedia/commons/5/51/Frogs_croak_calling_chorus_at_night.ogg',
+  duck:  'https://upload.wikimedia.org/wikipedia/commons/e/e2/Aix_sponsa_-_Wood_Duck_XC63109.mp3',
+  lion:  'https://upload.wikimedia.org/wikipedia/commons/8/88/Lion_Mad.ogg',
+  wolf:  'https://upload.wikimedia.org/wikipedia/commons/8/87/Wolf_howls.ogg',
+  horse: 'https://upload.wikimedia.org/wikipedia/commons/d/db/Wiehern.ogg',
+  tiger: 'https://upload.wikimedia.org/wikipedia/commons/4/40/Tiger_Mad.ogg',
+  whale: 'https://upload.wikimedia.org/wikipedia/commons/4/4b/Whales_and_Dolphins_whale_nature_sounds_songs_nueva_esparta.ogg',
+  sheep: 'https://upload.wikimedia.org/wikipedia/commons/1/13/Sheep_bleating.ogg',
+  snake: 'https://upload.wikimedia.org/wikipedia/commons/2/22/Rattlesnake.ogg',
+  eagle: 'https://upload.wikimedia.org/wikipedia/commons/9/92/Falco_amurensis_-_Amur_Falcon_XC342709.mp3',
+  cow:   'https://upload.wikimedia.org/wikipedia/commons/7/71/Sound_Ideas%2C_COW_-_SINGLE_MOO%2C_ANIMAL_02.wav',
 }
 
-const FALLBACK_SOUNDS = [
-  { text: 'WAHOOOO!',      pitch: 1.6, rate: 1.1 },
-  { text: 'YEEEHAW!',      pitch: 1.4, rate: 1.0 },
-  { text: 'BOOOOOM!',      pitch: 0.4, rate: 0.7 },
-  { text: 'ZAP ZAP ZAP!',  pitch: 1.7, rate: 1.3 },
-  { text: 'KAPOW!',        pitch: 1.0, rate: 1.1 },
-  { text: 'WUBWUBWUB!',    pitch: 0.5, rate: 1.4 },
-  { text: 'SPLAT!',        pitch: 1.2, rate: 1.0 },
-  { text: 'ZOOOOOOM!',     pitch: 1.3, rate: 0.8 },
-  { text: 'BOING BOING BOING!', pitch: 1.5, rate: 1.2 },
-  { text: 'NEEEEOW!',      pitch: 1.8, rate: 0.9 },
+// TTS fallbacks for words without real audio
+const TTS_SOUNDS: Record<string, { text: string; pitch?: number; rate?: number }> = {
+  fish:  { text: 'blub blub blub!', pitch: 1.2, rate: 0.9 },
+  panda: { text: 'squeak squeak!', pitch: 1.6, rate: 1.0 },
+  bunny: { text: 'squeak squeak!', pitch: 1.7, rate: 1.1 },
+  shark: { text: 'dun dun dun dun!', pitch: 0.5, rate: 0.8 },
+  snail: { text: 'slurp slurp!', pitch: 0.9, rate: 0.5 },
+  drum:  { text: 'boom boom boom!', pitch: 0.5, rate: 0.9 },
+  bell:  { text: 'ding ding ding!', pitch: 1.8, rate: 1.0 },
+  sun:   { text: 'ahhhhh so warm!', pitch: 1.2, rate: 0.8 },
+  rain:  { text: 'pitter patter pitter patter!', pitch: 1.3, rate: 1.2 },
+  wind:  { text: 'whoooooosh!', pitch: 1.1, rate: 0.7 },
+  moon:  { text: 'oooooh spooky!', pitch: 0.8, rate: 0.6 },
+  star:  { text: 'twinkle twinkle!', pitch: 1.6, rate: 0.9 },
+  tree:  { text: 'rustle rustle rustle!', pitch: 1.0, rate: 0.9 },
+  rose:  { text: 'sniff sniff ahhh!', pitch: 1.2, rate: 0.9 },
+  grape: { text: 'squish squish!', pitch: 1.1, rate: 1.0 },
+  cake:  { text: 'yummmm yummm!', pitch: 1.3, rate: 0.9 },
+  apple: { text: 'crunch crunch crunch!', pitch: 1.1, rate: 1.1 },
+  lemon: { text: 'sour! blegh!', pitch: 1.5, rate: 1.0 },
+  milk:  { text: 'glug glug glug!', pitch: 1.1, rate: 1.0 },
+  corn:  { text: 'crunch crunch!', pitch: 1.0, rate: 1.1 },
+  hat:   { text: 'ta daaa!', pitch: 1.3, rate: 1.0 },
+  kite:  { text: 'whoooosh!', pitch: 1.2, rate: 0.8 },
+  boat:  { text: 'splash splash splash!', pitch: 1.0, rate: 1.0 },
+  door:  { text: 'creeeak! bang!', pitch: 0.8, rate: 0.8 },
+  flag:  { text: 'flap flap flap!', pitch: 1.1, rate: 1.1 },
+  ball:  { text: 'boing boing boing!', pitch: 1.4, rate: 1.2 },
+  fist:  { text: 'pow! wham!', pitch: 0.8, rate: 1.1 },
+  gift:  { text: 'ooooh wow! yaaay!', pitch: 1.5, rate: 1.0 },
+  lamp:  { text: 'click! ahhhh!', pitch: 1.3, rate: 1.0 },
+  nest:  { text: 'tweet tweet tweet!', pitch: 1.7, rate: 1.2 },
+  sand:  { text: 'swoooosh!', pitch: 1.0, rate: 0.8 },
+  blue:  { text: 'ooooh so blue!', pitch: 1.2, rate: 0.9 },
+}
+
+const FALLBACK_TTS = [
+  { text: 'WAHOOOO!', pitch: 1.6, rate: 1.1 },
+  { text: 'YEEEHAW!', pitch: 1.4, rate: 1.0 },
+  { text: 'BOOOOOM!', pitch: 0.4, rate: 0.7 },
+  { text: 'ZAP ZAP ZAP!', pitch: 1.7, rate: 1.3 },
+  { text: 'KAPOW!', pitch: 1.0, rate: 1.1 },
 ]
 
+let currentAudio: HTMLAudioElement | null = null
+
 function playWordSound(word: string) {
-  if (typeof window === 'undefined' || !window.speechSynthesis) return
-  const sound = WORD_SOUNDS[word] ?? FALLBACK_SOUNDS[Math.floor(Math.random() * FALLBACK_SOUNDS.length)]
-  // Small delay prevents Chrome speechSynthesis silent-fail bug
+  if (typeof window === 'undefined') return
+
+  // Stop any currently playing audio
+  if (currentAudio) { currentAudio.pause(); currentAudio.currentTime = 0 }
+  window.speechSynthesis?.cancel()
+
+  const audioUrl = WORD_AUDIO[word]
+  if (audioUrl) {
+    const audio = new Audio(audioUrl)
+    audio.volume = 1.0
+    currentAudio = audio
+    audio.play().catch(() => {
+      // fallback to TTS if audio fails to load
+      playTTS(word)
+    })
+    return
+  }
+  playTTS(word)
+}
+
+function playTTS(word: string) {
+  if (!window.speechSynthesis) return
+  const sound = TTS_SOUNDS[word] ?? FALLBACK_TTS[Math.floor(Math.random() * FALLBACK_TTS.length)]
   setTimeout(() => {
     window.speechSynthesis.cancel()
     setTimeout(() => {
-      const utterance = new SpeechSynthesisUtterance(sound.text)
-      utterance.pitch = sound.pitch ?? 1.0
-      utterance.rate = sound.rate ?? 1.0
-      utterance.volume = 1.0
-      window.speechSynthesis.speak(utterance)
+      const u = new SpeechSynthesisUtterance(sound.text)
+      u.pitch = sound.pitch ?? 1.0
+      u.rate = sound.rate ?? 1.0
+      u.volume = 1.0
+      window.speechSynthesis.speak(u)
     }, 50)
   }, 0)
 }
@@ -169,6 +186,21 @@ function randomPos() {
   }
 }
 
+const PALETTES = [
+  { bg: '#fff9f0', header: '#f97316', tile: '#ffedd5', text: '#7c2d12' },
+  { bg: '#f0fdf4', header: '#16a34a', tile: '#dcfce7', text: '#14532d' },
+  { bg: '#eff6ff', header: '#2563eb', tile: '#dbeafe', text: '#1e3a8a' },
+  { bg: '#fdf4ff', header: '#9333ea', tile: '#f3e8ff', text: '#581c87' },
+  { bg: '#fff1f2', header: '#e11d48', tile: '#ffe4e6', text: '#881337' },
+  { bg: '#f0fdfa', header: '#0d9488', tile: '#ccfbf1', text: '#134e4a' },
+  { bg: '#fefce8', header: '#ca8a04', tile: '#fef9c3', text: '#713f12' },
+  { bg: '#f8fafc', header: '#475569', tile: '#e2e8f0', text: '#0f172a' },
+]
+
+function randomPalette() {
+  return PALETTES[Math.floor(Math.random() * PALETTES.length)]
+}
+
 function pickRandom(exclude?: string) {
   const pool = exclude ? SPELL_WORDS.filter(w => w.word !== exclude) : SPELL_WORDS
   return pool[Math.floor(Math.random() * pool.length)]
@@ -183,12 +215,15 @@ export default function SpellingGame() {
   const [sessionTotal, setSessionTotal] = useState(0)
   const [scorePos, setScorePos] = useState({ top: 68, left: 4 })
   const [scorePopping, setScorePopping] = useState(false)
+  const [lastCorrect, setLastCorrect] = useState<typeof current | null>(null)
+  const [palette, setPalette] = useState(() => randomPalette())
   const supabase = createClient()
 
   const loadWord = useCallback((word: string) => {
     setSlots(word.split('').map((_, i) => ({ letter: '', state: i === 0 ? 'active' : 'blank' })))
     setActiveSlot(0)
     setCelebrating(false)
+    setPalette(randomPalette())
   }, [])
 
   useEffect(() => {
@@ -210,6 +245,7 @@ export default function SpellingGame() {
         if (next >= current.word.length) {
           // Word complete!
           setCelebrating(true)
+          setLastCorrect(current)
           playWordSound(current.word)
           setSessionCorrect(c => c + 1)
           setSessionTotal(t => t + 1)
@@ -250,17 +286,24 @@ export default function SpellingGame() {
       display: 'flex', flexDirection: 'column', alignItems: 'center',
       justifyContent: 'center', minHeight: 'calc(100vh - 56px)',
       padding: 40, userSelect: 'none',
+      background: palette.bg,
+      transition: 'background 0.4s ease',
     }}>
-      {/* Emoji */}
-      <div style={{
-        fontSize: 130, lineHeight: 1, marginBottom: 8,
-        animation: celebrating ? 'bounce-emoji 0.4s ease-in-out 3' : undefined,
-      }}>
+      {/* Emoji — clickable as sound hint */}
+      <div
+        onClick={() => playWordSound(current.word)}
+        title="Click to hear the sound!"
+        style={{
+          fontSize: 130, lineHeight: 1, marginBottom: 8, cursor: 'pointer',
+          animation: celebrating ? 'bounce-emoji 0.4s ease-in-out 3' : undefined,
+          filter: 'drop-shadow(0 4px 16px rgba(0,0,0,0.12))',
+        }}
+      >
         {current.emoji}
       </div>
 
       {/* Hint */}
-      <div style={{ fontSize: 16, color: 'var(--mid)', marginBottom: 32, letterSpacing: '0.02em' }}>
+      <div style={{ fontSize: 16, color: palette.text, opacity: 0.7, marginBottom: 32, letterSpacing: '0.02em' }}>
         {celebrating ? '🎉 NICE JOB!' : current.hint}
       </div>
 
@@ -269,12 +312,12 @@ export default function SpellingGame() {
         {slots.map((slot, i) => (
           <div key={i} style={{
             width: 72, height: 72,
-            border: `3px solid ${slot.state === 'active' ? 'var(--accent)' : slot.state === 'correct' ? 'var(--accent)' : slot.state === 'wrong' ? 'var(--accent2)' : 'var(--border)'}`,
+            border: `3px solid ${slot.state === 'wrong' ? '#e11d48' : slot.state !== 'blank' ? palette.header : palette.tile}`,
             borderRadius: 4,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             fontSize: 36, fontWeight: 900,
-            color: slot.state === 'wrong' ? 'var(--accent2)' : 'var(--text)',
-            background: slot.state === 'correct' && i < activeSlot ? 'transparent' : slot.state === 'active' ? 'rgba(42,122,75,0.06)' : 'var(--white)',
+            color: slot.state === 'wrong' ? '#e11d48' : palette.text,
+            background: slot.state === 'active' ? palette.tile : slot.state === 'correct' ? palette.tile : '#fff',
             transition: 'all 0.15s',
             animation: slot.state === 'wrong' ? 'shake 0.3s ease-in-out' : undefined,
           }}>
@@ -286,39 +329,47 @@ export default function SpellingGame() {
       {/* Skip button */}
       {!celebrating && (
         <button onClick={skipWord}
-          style={{ fontFamily: 'inherit', fontSize: 13, fontWeight: 600, color: 'var(--muted)', background: 'none', border: '1px solid var(--border)', padding: '8px 20px', cursor: 'pointer', borderRadius: 3, letterSpacing: '0.04em' }}>
+          style={{ fontFamily: 'inherit', fontSize: 13, fontWeight: 600, color: palette.text, opacity: 0.5, background: 'none', border: `1px solid ${palette.tile}`, padding: '8px 20px', cursor: 'pointer', borderRadius: 3, letterSpacing: '0.04em' }}>
           Skip word →
         </button>
       )}
 
-      {/* Floating score counter */}
-      {sessionCorrect > 0 && (
-        <div style={{
-          position: 'fixed',
-          top: `${scorePos.top}vh`,
-          left: `${scorePos.left}vw`,
-          zIndex: 1055,
-          pointerEvents: 'none',
-          userSelect: 'none',
-          lineHeight: 1,
-          transition: 'top 0.55s cubic-bezier(0.34,1.56,0.64,1), left 0.55s cubic-bezier(0.34,1.56,0.64,1)',
-          animation: scorePopping ? 'score-pop 0.7s cubic-bezier(0.34,1.56,0.64,1)' : undefined,
-        }}>
+      {/* Floating score counter — clickable to replay sound */}
+      {sessionCorrect > 0 && lastCorrect && (
+        <div
+          onClick={() => playWordSound(lastCorrect.word)}
+          style={{
+            position: 'fixed',
+            top: `${scorePos.top}vh`,
+            left: `${scorePos.left}vw`,
+            zIndex: 1055,
+            cursor: 'pointer',
+            userSelect: 'none',
+            lineHeight: 1,
+            transition: 'top 0.55s cubic-bezier(0.34,1.56,0.64,1), left 0.55s cubic-bezier(0.34,1.56,0.64,1)',
+            animation: scorePopping ? 'score-pop 0.7s cubic-bezier(0.34,1.56,0.64,1)' : undefined,
+          }}
+        >
+          {/* Last correct word emoji */}
+          <div style={{ fontSize: 48, lineHeight: 1, textAlign: 'center', marginBottom: 4, filter: 'drop-shadow(0 2px 8px rgba(0,0,0,0.15))' }}>
+            {lastCorrect.emoji}
+          </div>
           <div style={{
-            fontSize: 'clamp(100px, 14vw, 180px)',
+            fontSize: 'clamp(80px, 12vw, 150px)',
             fontWeight: 900,
             fontFamily: 'Inter, system-ui, sans-serif',
-            color: 'var(--accent)',
-            WebkitTextStroke: '3px rgba(38,126,92,0.3)',
+            color: palette.header,
+            WebkitTextStroke: '2px rgba(0,0,0,0.1)',
+            lineHeight: 0.9,
           }}>
             {sessionCorrect}
           </div>
           <div style={{
-            fontSize: 13, fontWeight: 700, letterSpacing: '0.1em',
-            textTransform: 'uppercase', color: 'var(--mid)',
-            textAlign: 'center', marginTop: -8,
+            fontSize: 11, fontWeight: 700, letterSpacing: '0.12em',
+            textTransform: 'uppercase', color: palette.text, opacity: 0.5,
+            textAlign: 'center', marginTop: 4,
           }}>
-            correct
+            ✓ tap to replay
           </div>
         </div>
       )}
