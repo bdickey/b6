@@ -68,11 +68,14 @@ const FALLBACK_TTS = [
 ]
 
 let currentAudio: HTMLAudioElement | null = null
+let audioStopTimer: ReturnType<typeof setTimeout> | null = null
+const MAX_SOUND_MS = 2500 // cap all sounds at 2.5 seconds
 
 function playWordSound(word: string) {
   if (typeof window === 'undefined') return
 
   // Stop any currently playing audio
+  if (audioStopTimer) { clearTimeout(audioStopTimer); audioStopTimer = null }
   if (currentAudio) { currentAudio.pause(); currentAudio.currentTime = 0 }
   window.speechSynthesis?.cancel()
 
@@ -81,10 +84,11 @@ function playWordSound(word: string) {
     const audio = new Audio(audioUrl)
     audio.volume = 1.0
     currentAudio = audio
-    audio.play().catch(() => {
-      // fallback to TTS if audio fails to load
-      playTTS(word)
-    })
+    audio.play().catch(() => playTTS(word))
+    audioStopTimer = setTimeout(() => {
+      audio.pause()
+      audio.currentTime = 0
+    }, MAX_SOUND_MS)
     return
   }
   playTTS(word)
@@ -186,6 +190,22 @@ function randomPos() {
   }
 }
 
+const YT_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY // reusing Google key — needs YouTube Data API v3 enabled
+
+async function fetchYouTubeVideo(word: string): Promise<string | null> {
+  if (!YT_KEY) return null
+  try {
+    const q = encodeURIComponent(`${word} animal sound`)
+    const res = await fetch(
+      `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${q}&type=video&maxResults=1&videoDuration=short&safeSearch=strict&key=${YT_KEY}`
+    )
+    const data = await res.json()
+    return data?.items?.[0]?.id?.videoId ?? null
+  } catch {
+    return null
+  }
+}
+
 const PALETTES = [
   { bg: '#fff9f0', header: '#f97316', tile: '#ffedd5', text: '#7c2d12' },
   { bg: '#f0fdf4', header: '#16a34a', tile: '#dcfce7', text: '#14532d' },
@@ -217,6 +237,8 @@ export default function SpellingGame() {
   const [scorePopping, setScorePopping] = useState(false)
   const [lastCorrect, setLastCorrect] = useState<typeof current | null>(null)
   const [palette, setPalette] = useState(() => randomPalette())
+  const [videoId, setVideoId] = useState<string | null>(null)
+  const [showVideo, setShowVideo] = useState(false)
   const supabase = createClient()
 
   const loadWord = useCallback((word: string) => {
@@ -247,6 +269,10 @@ export default function SpellingGame() {
           setCelebrating(true)
           setLastCorrect(current)
           playWordSound(current.word)
+          fetchYouTubeVideo(current.word).then(id => {
+            if (id) { setVideoId(id); setShowVideo(true) }
+          })
+          setTimeout(() => setShowVideo(false), 4500)
           setSessionCorrect(c => c + 1)
           setSessionTotal(t => t + 1)
           setScorePos(randomPos())
@@ -332,6 +358,26 @@ export default function SpellingGame() {
           style={{ fontFamily: 'inherit', fontSize: 13, fontWeight: 600, color: palette.text, opacity: 0.5, background: 'none', border: `1px solid ${palette.tile}`, padding: '8px 20px', cursor: 'pointer', borderRadius: 3, letterSpacing: '0.04em' }}>
           Skip word →
         </button>
+      )}
+
+      {/* YouTube video popup on correct answer */}
+      {showVideo && videoId && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 1080,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          background: 'rgba(0,0,0,0.6)',
+          animation: 'benji-intro-in 0.3s ease-out',
+        }} onClick={() => setShowVideo(false)}>
+          <div style={{ borderRadius: 16, overflow: 'hidden', boxShadow: '0 24px 80px rgba(0,0,0,0.5)', width: 'min(480px, 90vw)', aspectRatio: '16/9' }}>
+            <iframe
+              width="100%" height="100%"
+              src={`https://www.youtube.com/embed/${videoId}?autoplay=1&mute=0&controls=0&modestbranding=1&rel=0&start=0`}
+              allow="autoplay"
+              style={{ border: 'none', display: 'block' }}
+            />
+          </div>
+          <div style={{ position: 'absolute', top: 24, right: 24, color: '#fff', fontSize: 13, fontWeight: 600, opacity: 0.7 }}>tap anywhere to close</div>
+        </div>
       )}
 
       {/* Floating score counter — clickable to replay sound */}
