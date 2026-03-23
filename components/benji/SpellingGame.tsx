@@ -67,28 +67,52 @@ const FALLBACK_TTS = [
   { text: 'KAPOW!', pitch: 1.0, rate: 1.1 },
 ]
 
+// Skip past any silence/intro in each audio file (seconds)
+const AUDIO_START_AT: Record<string, number> = {
+  bee:   0.8,
+  bird:  0.6,
+  frog:  0.5,
+  duck:  0.4,
+  wolf:  0.3,
+  whale: 1.2,
+  eagle: 0.5,
+}
+
+// Preload cache — populated on mount so audio plays instantly
+const audioCache: Record<string, HTMLAudioElement> = {}
+
+function preloadAudio() {
+  if (typeof window === 'undefined') return
+  Object.entries(WORD_AUDIO).forEach(([word, url]) => {
+    if (!audioCache[word]) {
+      const a = new Audio(url)
+      a.preload = 'auto'
+      a.load()
+      audioCache[word] = a
+    }
+  })
+}
+
 let currentAudio: HTMLAudioElement | null = null
 let audioStopTimer: ReturnType<typeof setTimeout> | null = null
-const MAX_SOUND_MS = 2500 // cap all sounds at 2.5 seconds
+const MAX_SOUND_MS = 2200
 
 function playWordSound(word: string) {
   if (typeof window === 'undefined') return
 
-  // Stop any currently playing audio
   if (audioStopTimer) { clearTimeout(audioStopTimer); audioStopTimer = null }
-  if (currentAudio) { currentAudio.pause(); currentAudio.currentTime = 0 }
+  if (currentAudio) { currentAudio.pause() }
   window.speechSynthesis?.cancel()
 
   const audioUrl = WORD_AUDIO[word]
   if (audioUrl) {
-    const audio = new Audio(audioUrl)
+    // Use preloaded instance; reset to skip-point so it plays immediately
+    const audio = audioCache[word] ?? new Audio(audioUrl)
+    audio.currentTime = AUDIO_START_AT[word] ?? 0
     audio.volume = 1.0
     currentAudio = audio
     audio.play().catch(() => playTTS(word))
-    audioStopTimer = setTimeout(() => {
-      audio.pause()
-      audio.currentTime = 0
-    }, MAX_SOUND_MS)
+    audioStopTimer = setTimeout(() => { audio.pause() }, MAX_SOUND_MS)
     return
   }
   playTTS(word)
@@ -226,6 +250,14 @@ function pickRandom(exclude?: string) {
   return pool[Math.floor(Math.random() * pool.length)]
 }
 
+interface PileItem {
+  word: string
+  emoji: string
+  count: number
+  pos: { top: number; left: number }
+  id: number
+}
+
 export default function SpellingGame() {
   const [current, setCurrent] = useState(() => pickRandom())
   const [slots, setSlots] = useState<SlotState[]>([])
@@ -233,13 +265,15 @@ export default function SpellingGame() {
   const [celebrating, setCelebrating] = useState(false)
   const [sessionCorrect, setSessionCorrect] = useState(0)
   const [sessionTotal, setSessionTotal] = useState(0)
-  const [scorePos, setScorePos] = useState({ top: 68, left: 4 })
-  const [scorePopping, setScorePopping] = useState(false)
-  const [lastCorrect, setLastCorrect] = useState<typeof current | null>(null)
+  const [scorePile, setScorePile] = useState<PileItem[]>([])
+  const [poppingId, setPoppingId] = useState<number | null>(null)
   const [palette, setPalette] = useState(() => randomPalette())
   const [videoId, setVideoId] = useState<string | null>(null)
   const [showVideo, setShowVideo] = useState(false)
   const supabase = createClient()
+
+  // Preload all audio on mount
+  useEffect(() => { preloadAudio() }, [])
 
   const loadWord = useCallback((word: string) => {
     setSlots(word.split('').map((_, i) => ({ letter: '', state: i === 0 ? 'active' : 'blank' })))
@@ -273,11 +307,21 @@ export default function SpellingGame() {
             if (id) { setVideoId(id); setShowVideo(true) }
           })
           setTimeout(() => setShowVideo(false), 4500)
-          setSessionCorrect(c => c + 1)
+          setSessionCorrect(c => {
+            const newCount = c + 1
+            const newItem: PileItem = {
+              word: current.word,
+              emoji: current.emoji,
+              count: newCount,
+              pos: randomPos(),
+              id: Date.now(),
+            }
+            setScorePile(prev => [...prev, newItem])
+            setPoppingId(newItem.id)
+            setTimeout(() => setPoppingId(null), 700)
+            return newCount
+          })
           setSessionTotal(t => t + 1)
-          setScorePos(randomPos())
-          setScorePopping(true)
-          setTimeout(() => setScorePopping(false), 700)
           supabase.from('benji_spelling_log').insert({ correct: 1, total: 1 }).then(() => {})
           setTimeout(() => {
             setCurrent(prev => pickRandom(prev.word))
@@ -380,45 +424,38 @@ export default function SpellingGame() {
         </div>
       )}
 
-      {/* Floating score counter — clickable to replay sound */}
-      {sessionCorrect > 0 && lastCorrect && (
+      {/* Score pile — all correct answers stay on screen */}
+      {scorePile.map(item => (
         <div
-          onClick={() => playWordSound(lastCorrect.word)}
+          key={item.id}
+          onClick={() => playWordSound(item.word)}
           style={{
             position: 'fixed',
-            top: `${scorePos.top}vh`,
-            left: `${scorePos.left}vw`,
+            top: `${item.pos.top}vh`,
+            left: `${item.pos.left}vw`,
             zIndex: 1055,
             cursor: 'pointer',
             userSelect: 'none',
             lineHeight: 1,
-            transition: 'top 0.55s cubic-bezier(0.34,1.56,0.64,1), left 0.55s cubic-bezier(0.34,1.56,0.64,1)',
-            animation: scorePopping ? 'score-pop 0.7s cubic-bezier(0.34,1.56,0.64,1)' : undefined,
+            animation: poppingId === item.id ? 'score-pop 0.7s cubic-bezier(0.34,1.56,0.64,1)' : undefined,
           }}
         >
-          {/* Last correct word emoji */}
-          <div style={{ fontSize: 48, lineHeight: 1, textAlign: 'center', marginBottom: 4, filter: 'drop-shadow(0 2px 8px rgba(0,0,0,0.15))' }}>
-            {lastCorrect.emoji}
+          <div style={{ fontSize: 36, lineHeight: 1, textAlign: 'center', marginBottom: 2 }}>
+            {item.emoji}
           </div>
           <div style={{
-            fontSize: 'clamp(80px, 12vw, 150px)',
+            fontSize: 'clamp(56px, 8vw, 110px)',
             fontWeight: 900,
             fontFamily: 'Inter, system-ui, sans-serif',
             color: palette.header,
-            WebkitTextStroke: '2px rgba(0,0,0,0.1)',
+            WebkitTextStroke: '2px rgba(0,0,0,0.08)',
             lineHeight: 0.9,
+            textAlign: 'center',
           }}>
-            {sessionCorrect}
-          </div>
-          <div style={{
-            fontSize: 11, fontWeight: 700, letterSpacing: '0.12em',
-            textTransform: 'uppercase', color: palette.text, opacity: 0.5,
-            textAlign: 'center', marginTop: 4,
-          }}>
-            ✓ tap to replay
+            {item.count}
           </div>
         </div>
-      )}
+      ))}
     </div>
   )
 }
